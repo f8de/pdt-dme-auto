@@ -5,6 +5,7 @@ import requests
 
 _BASE            = "https://api.notion.com/v1"
 _PATIENT_DB_ID   = "9c83bd769bb9424bac74d4760a1450f4"
+_CLIENTS_DB_ID   = "9051e0ddc1be47dcb727f236fa599000"
 _NOTION_VERSION  = "2022-06-28"
 
 
@@ -38,6 +39,43 @@ def fetch_work_queue(token: str) -> list[dict]:
             break
         payload["start_cursor"] = data["next_cursor"]
     return patients
+
+
+def fetch_db_config(token: str, client_code: str) -> dict:
+    """Return MySQL credentials for client_code from Notion Clients DB."""
+    url     = f"{_BASE}/databases/{_CLIENTS_DB_ID}/query"
+    payload = {
+        "filter": {
+            "and": [
+                {"property": "Client Code", "title": {"equals": client_code}},
+                {"property": "Active", "checkbox": {"equals": True}},
+            ]
+        }
+    }
+    resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
+    resp.raise_for_status()
+    results = resp.json()["results"]
+    if not results:
+        raise ValueError(
+            f"No active client config found for '{client_code}' in Notion Clients DB.\n"
+            "Add a row to the Clients database in Notion and check 'Active'."
+        )
+    props = results[0]["properties"]
+
+    def rt(key: str) -> str:
+        items = props.get(key, {}).get("rich_text", [])
+        return items[0]["plain_text"].strip() if items else ""
+
+    def num(key: str) -> int:
+        return int(props.get(key, {}).get("number") or 3306)
+
+    return {
+        "host":     rt("DB Host"),
+        "port":     num("DB Port"),
+        "user":     rt("DB User"),
+        "password": rt("DB Password"),
+        "database": rt("DB Database"),
+    }
 
 
 def mark_in_dmeworks(token: str, page_id: str) -> None:

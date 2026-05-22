@@ -1,4 +1,5 @@
 import json
+import pytest
 from unittest.mock import patch, MagicMock
 
 
@@ -245,3 +246,76 @@ def test_mark_in_dmeworks_calls_patch():
         call_kwargs = mock_patch.call_args
         payload = call_kwargs[1]["json"]
         assert payload["properties"]["Status"]["select"]["name"] == "In DMEworks"
+
+
+# ── fetch_db_config ───────────────────────────────────────────────────────────
+
+def _sample_client_page(
+    client_code="ALLIED",
+    host="192.168.1.10",
+    port=3306,
+    user="dmeworks",
+    password="s3cr3t",
+    database="dmeworks",
+    active=True,
+):
+    return {
+        "properties": {
+            "Client Code": _title(client_code),
+            "DB Host":     _rt(host),
+            "DB Port":     {"number": port},
+            "DB User":     _rt(user),
+            "DB Password": _rt(password),
+            "DB Database": _rt(database),
+            "Active":      {"checkbox": active},
+        }
+    }
+
+
+def test_fetch_db_config_returns_credentials():
+    import utils.notion as n
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"results": [_sample_client_page()]}
+    with patch("requests.post", return_value=mock_resp):
+        result = n.fetch_db_config("fake-token", "ALLIED")
+    assert result["host"] == "192.168.1.10"
+    assert result["port"] == 3306
+    assert result["user"] == "dmeworks"
+    assert result["password"] == "s3cr3t"
+    assert result["database"] == "dmeworks"
+
+
+def test_fetch_db_config_raises_when_not_found():
+    import utils.notion as n
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"results": []}
+    with patch("requests.post", return_value=mock_resp):
+        with pytest.raises(ValueError, match="No active client config found for 'UNKNOWN'"):
+            n.fetch_db_config("fake-token", "UNKNOWN")
+
+
+def test_fetch_db_config_uses_correct_filter():
+    import utils.notion as n
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"results": [_sample_client_page()]}
+    with patch("requests.post", return_value=mock_resp) as mock_post:
+        n.fetch_db_config("fake-token", "ALLIED")
+    payload = mock_post.call_args[1]["json"]
+    filters = payload["filter"]["and"]
+    assert any(f.get("property") == "Client Code" for f in filters)
+    assert any(f.get("property") == "Active" for f in filters)
+
+
+def test_fetch_db_config_defaults_port_when_null():
+    import utils.notion as n
+    page = _sample_client_page()
+    page["properties"]["DB Port"] = {"number": None}
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"results": [page]}
+    with patch("requests.post", return_value=mock_resp):
+        result = n.fetch_db_config("fake-token", "ALLIED")
+    assert result["port"] == 3306

@@ -1,13 +1,15 @@
 """
-First-run credential setup — stores Notion token and MySQL credentials
-in Windows Credential Manager (DPAPI-backed, machine-bound).
+First-run setup instructions for DMEworks Entry.
+
+No credentials are stored locally. Everything lives in:
+  - Windows PowerShell SecretManagement (Notion token only)
+  - Notion Clients DB (MySQL credentials per client)
 
 Usage:
   python entry_setup.py
   dmeworks-entry.exe --setup
 """
 
-import getpass
 import os
 import sys
 
@@ -17,64 +19,53 @@ if _ROOT not in sys.path:
 
 
 def run_setup() -> None:
-    from utils.creds import set_notion_token, set_db_config
-
     print()
-    print("=" * 56)
-    print("  DMEworks Entry — First-Time Setup")
-    print("=" * 56)
+    print("=" * 60)
+    print("  DMEworks Entry — Setup Instructions")
+    print("=" * 60)
     print()
-    print("  Credentials are stored in Windows Credential Manager.")
-    print("  They are machine-bound and encrypted by Windows (DPAPI).")
-    print("  They are NEVER written to disk.")
+    print("  No secrets are stored on this machine.")
     print()
-
-    # ── Notion token ───────────────────────────────────────────
-    token = getpass.getpass("  Notion API token (starts with ntn_): ").strip()
-    if not token:
-        print("  Error: token is required.")
-        sys.exit(1)
-    if not token.startswith("ntn_"):
-        print("  Error: Notion token must start with 'ntn_'. Check your token.")
-        sys.exit(1)
-    set_notion_token(token)
-    print("  [OK] Notion token stored.")
+    print("  STEP 1 — Store your Notion token (one-time, per machine)")
+    print("  ─────────────────────────────────────────────────────────")
+    print("  Run in PowerShell (requires SecretManagement module):")
     print()
-
-    # ── DB credentials ─────────────────────────────────────────
-    client_code = input("  Client code (e.g. ALLIED): ").strip().upper()
-    if not client_code:
-        print("  Error: client code is required.")
-        sys.exit(1)
-
-    host     = input("  MySQL host:         ").strip()
-    port_str = input("  MySQL port [3306]:  ").strip() or "3306"
-    user     = input("  MySQL user:         ").strip()
-    password = getpass.getpass("  MySQL password:     ").strip()
-    database = input("  MySQL database:     ").strip()
-
-    if not all([host, user, password, database]):
-        print("  Error: host, user, password, and database are required.")
-        sys.exit(1)
-
-    try:
-        port = int(port_str)
-    except ValueError:
-        print(f"  Error: invalid port '{port_str}'")
-        sys.exit(1)
-
-    set_db_config(client_code, {
-        "host":     host,
-        "port":     port,
-        "user":     user,
-        "password": password,
-        "database": database,
-    })
-    print(f"  [OK] DB credentials for '{client_code}' stored.")
+    print("    Install-Module -Name Microsoft.PowerShell.SecretManagement -Force")
+    print("    Install-Module -Name Microsoft.PowerShell.SecretStore -Force")
+    print("    Register-SecretVault -Name local -ModuleName Microsoft.PowerShell.SecretStore")
+    print("    Set-Secret -Vault local -Name notion-token -Secret 'ntn_YOUR_TOKEN_HERE'")
     print()
-    print("  Setup complete.")
-    print(f"  Run: dmeworks-entry.exe --client {client_code}")
-    print("=" * 56)
+    print("  The vault is backed by Windows Hello / PIN — no master password.")
+    print("  Token never touches disk.")
+    print()
+    print("  STEP 2 — Add your client to Notion Clients DB")
+    print("  ──────────────────────────────────────────────")
+    print("  Open the Clients database in Notion and add a row:")
+    print()
+    print("    Client Code  : ALLIED   (uppercase, matches --client flag)")
+    print("    Client Name  : Allied Medical")
+    print("    DB Host      : 192.168.x.x")
+    print("    DB Port      : 3306")
+    print("    DB User      : dmeworks")
+    print("    DB Password  : your-mysql-password")
+    print("    DB Database  : dmeworks")
+    print("    Active       : ☑  (checked)")
+    print()
+    print("  MySQL credentials stay in Notion — never on this machine.")
+    print()
+    print("  STEP 3 — Run the tool")
+    print("  ──────────────────────")
+    print("  Use run.ps1 (injects token automatically):")
+    print()
+    print("    .\\run.ps1 --client ALLIED")
+    print("    .\\run.ps1 --client ALLIED --dry-run")
+    print()
+    print("  Or set the token manually and run the EXE directly:")
+    print()
+    print("    $env:NOTION_TOKEN = Get-Secret -Vault local -Name notion-token -AsPlainText")
+    print("    .\\dmeworks-entry.exe --client ALLIED")
+    print()
+    print("=" * 60)
     print()
 
 
