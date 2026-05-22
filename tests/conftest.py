@@ -3,12 +3,12 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _clear_creds_cache():
-    """Reload utils.creds between tests to prevent sys.modules patch interference."""
+def _clear_module_cache():
+    """Clear utils module cache between tests to prevent sys.modules patch interference."""
     for key in list(sys.modules.keys()):
-        if "utils.creds" in key:
+        if key.startswith("utils."):
             del sys.modules[key]
     yield
     for key in list(sys.modules.keys()):
-        if "utils.creds" in key:
+        if key.startswith("utils."):
             del sys.modules[key]
