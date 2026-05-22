@@ -9,15 +9,11 @@ a = Analysis(
     [os.path.join(ROOT, "entry_all.py")],
     pathex=[ROOT],
     binaries=[],
-    datas=[
-        (os.path.join(ROOT, "assets", "reference.db"), "."),
-    ],
+    datas=[],
     hiddenimports=[
         "mysql.connector",
         "mysql.connector.locales",
         "mysql.connector.locales.eng",
-        "keyring.backends.Windows",
-        "cryptography.fernet",
         "requests",
         "requests.adapters",
         "urllib3",

@@ -3,8 +3,7 @@ logs/
 __pycache__/
 *.pyc
 *.pyo
-data/db.json
-data/clients.enc
+data/
 dist/
 build/
 deploy/

@@ -76,23 +76,10 @@ def main() -> None:
     print("  All checks passed.")
     print()
 
-    # List available clients
-    client_code = None
-    try:
-        sys.path.insert(0, SCRIPT_DIR)
-        from utils.client_store import open_db
-        conn = open_db()
-        clients = conn.execute("SELECT code, name FROM clients ORDER BY code").fetchall()
-        conn.close()
-        if clients:
-            print("  Available clients:")
-            for c in clients:
-                print(f"    {c[0]:<20} {c[1]}")
-            print()
-    except Exception:
-        clients = []
+    print("  (Client codes are configured in the Notion Clients database)")
+    print()
 
-    print("  Entry")
+  print("  Entry")
     print("  [1]  Test entry      —  synthetic patient (--client test)")
     print("  [2]  Full entry      —  select client below")
     print()
@@ -124,15 +111,11 @@ def main() -> None:
         script = os.path.join(SCRIPT_DIR, "entry_test.py")
         extra_args = ["--client", "test"]
     elif choice == "2":
-        if clients:
-            try:
-                client_code = input("  Client code: ").strip()
-            except (KeyboardInterrupt, EOFError):
-                print()
-                sys.exit(0)
-        else:
-            print("  No clients found. Run: python manage_clients.py add-client")
-            sys.exit(1)
+        try:
+            client_code = input("  Client code: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            sys.exit(0)
         script = os.path.join(SCRIPT_DIR, "entry_all.py")
         extra_args = ["--client", client_code]
     elif choice == "3":

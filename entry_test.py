@@ -18,8 +18,8 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from utils import db
-from utils.client_store import ClientStore
+from utils import db, notion
+from utils.creds import get_notion_token
 from utils.logger import get_logger, mask_mbi, mask_dob
 
 log = get_logger("dmeworks.test")
@@ -36,15 +36,34 @@ def _parse_args():
 ARGS = _parse_args()
 DRY_RUN = ARGS.dry_run
 
-# ─── LOAD CLIENT DATA ─────────────────────────────────────────────────────────
+# ─── SYNTHETIC TEST DATA ──────────────────────────────────────────────────────
 
-_store = ClientStore(ARGS.client)
-MEDICARE_BY_STATE = ClientStore.medicare_map()
-TEST_DOCTOR       = _store.doctors[0]
-TEST_PATIENT      = _store.patients[0]
-_store.close()
+TEST_DOCTOR = {
+    "last": "TestDoctor", "first": "Test", "mi": "", "suffix": "MD",
+    "npi": "1234567893",
+    "address1": "1 Test Street", "city": "Testville", "state": "NJ",
+    "zip": "00001", "phone": "0000000000",
+}
 
-db.configure(ARGS.client)
+TEST_PATIENT = {
+    "last": "TestPatient", "first": "Test", "mi": "", "suffix": "",
+    "dob": "01/01/1940", "mbi": "1EG4TE5MK73",
+    "address1": "1 Test Ave", "city": "Testville", "state": "NJ",
+    "zip": "00001", "phone": "0000000000",
+    "doctor": "TestDoctor",
+    "icd10": ["M54.50", "M23.51"],
+    "secondary": None, "notes": "",
+}
+
+_token            = get_notion_token()
+INSURANCE_BY_STATE = notion.fetch_insurance_map(_token)
+
+try:
+    db.configure(ARGS.client, _token)
+except Exception as e:
+    log.warning("DB config not found for client '%s' — DB checks will be skipped: %s", ARGS.client, e)
+    import utils.db as _db_mod
+    _db_mod._conn_params = None
 
 T_SHORT = 0.5
 T_MED   = 1.0
@@ -333,7 +352,7 @@ def enter_customer(p, main_win, a):
         log.info("  [DRY RUN] skipping UI")
         return
 
-    medicare_name = MEDICARE_BY_STATE.get(p["state"])
+    medicare_name = INSURANCE_BY_STATE.get(p["state"])
     if not medicare_name:
         log.error("  No DMERC mapping for state '%s'", p["state"]); return
 
@@ -436,7 +455,7 @@ def main():
     log.info("DMEworks TEST — synthetic test record (client: %s)", ARGS.client)
     log.info("=" * 52)
 
-    medicare_name = MEDICARE_BY_STATE.get(TEST_PATIENT["state"])
+    medicare_name = INSURANCE_BY_STATE.get(TEST_PATIENT["state"])
     if not medicare_name:
         log.error("No DMERC mapping for test patient state '%s'", TEST_PATIENT["state"])
         sys.exit(1)
