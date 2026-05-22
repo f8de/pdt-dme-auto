@@ -26,7 +26,6 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from utils import db
-from utils.client_store import ClientStore
 from utils.logger import get_logger, mask_dob, mask_mbi
 
 log = get_logger()
@@ -36,21 +35,62 @@ log = get_logger()
 def _parse_args():
     import argparse
     p = argparse.ArgumentParser()
-    p.add_argument("--client",  required=True, help="Client code (see manage_clients.py list)")
-    p.add_argument("--dry-run", action="store_true", help="Show what would be created; no UI changes")
+    p.add_argument("--client",  default=None, help="Client code")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--setup",   action="store_true",
+                   help="Store Notion token and DB credentials (run once on each machine)")
     return p.parse_args()
 
-ARGS = _parse_args()
+ARGS    = _parse_args()
 DRY_RUN = ARGS.dry_run
+
+# ─── SETUP MODE ───────────────────────────────────────────────────────────────
+
+if ARGS.setup:
+    from entry_setup import run_setup
+    run_setup()
+    sys.exit(0)
+
+if not ARGS.client:
+    print("error: --client is required (or use --setup for first-time credential setup)")
+    sys.exit(1)
 
 # ─── LOAD CLIENT DATA ─────────────────────────────────────────────────────────
 
-_store = ClientStore(ARGS.client)
-MEDICARE_BY_STATE   = ClientStore.medicare_map()
-DOCTORS             = _store.doctors
-PATIENTS            = _store.patients
-INSURANCE_COMPANIES = _store.insurance_companies
-_store.close()
+from utils import notion
+from utils.client_store import ClientStore
+from utils.creds import get_notion_token
+
+MEDICARE_BY_STATE = ClientStore.medicare_map()
+
+_token      = get_notion_token()
+_raw        = notion.fetch_work_queue(_token)
+
+# Unique doctors by NPI
+_seen_npis: set[str] = set()
+DOCTORS: list[dict]  = []
+for _p in _raw:
+    _d   = _p.get("_doctor", {})
+    _npi = _d.get("npi", "")
+    if _npi and _npi not in _seen_npis:
+        _seen_npis.add(_npi)
+        DOCTORS.append(_d)
+
+PATIENTS: list[dict] = _raw
+
+# Derive insurance companies from patient states + secondary fields
+_seen_ins: set[str]             = set()
+INSURANCE_COMPANIES: list[dict] = []
+for _p in PATIENTS:
+    _medicare_name = MEDICARE_BY_STATE.get(_p.get("state", ""), "")
+    if _medicare_name and _medicare_name not in _seen_ins:
+        _seen_ins.add(_medicare_name)
+        INSURANCE_COMPANIES.append({"name": _medicare_name, "type": "MEDICARE"})
+    _sec      = _p.get("secondary") or {}
+    _sec_name = _sec.get("ins_company", "")
+    if _sec_name and _sec_name not in _seen_ins:
+        _seen_ins.add(_sec_name)
+        INSURANCE_COMPANIES.append({"name": _sec_name, "type": "OTHER"})
 
 db.configure(ARGS.client)
 
@@ -560,6 +600,12 @@ def ensure_all_customers(a, main_win, existing_mbis):
             continue
         try:
             create_customer(p, main_win, a)
+            if p.get("_notion_page_id"):
+                try:
+                    notion.mark_in_dmeworks(_token, p["_notion_page_id"])
+                    log.info("    [notion] Status → In DMEworks")
+                except Exception as ne:
+                    log.warning("    [notion] Status update failed: %s", ne)
         except Exception as e:
             log.error("  [ERROR]  %s — %s", label, e)
 
