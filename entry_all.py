@@ -97,6 +97,7 @@ db.configure(ARGS.client)
 # ─── STATUS OVERLAY ───────────────────────────────────────────────────────────
 
 _status_q: queue.Queue = queue.Queue()
+_notion_retry: list[str] = []
 
 
 def _overlay_thread() -> None:
@@ -148,7 +149,7 @@ def validate_csv() -> list[str]:
         if not co.get("name"):
             errors.append("Insurance companies: row with missing name")
     for p in PATIENTS:
-        label = f"Patient {p['last']}, {p['first']}"
+        label = f"Patient MBI {mask_mbi(p['mbi'])}" if p.get("mbi") else "Patient (no MBI)"
         if not p.get("mbi"):
             errors.append(f"{label}: missing MBI")
         if not p.get("dob"):
@@ -328,7 +329,7 @@ def set_dob(win, dob_str):
 # ─── DOCTORS ──────────────────────────────────────────────────────────────────
 
 def create_doctor(doc, main_win, a):
-    label = f"{doc['first']} {doc['last']} (NPI {doc['npi']})"
+    label = f"NPI {doc['npi']}"
     w = open_fresh_window(main_win, a, "Doctor", "Maintain->Doctor")
     if not w:
         raise RuntimeError(f"Doctor window not found for {label}")
@@ -379,7 +380,7 @@ def ensure_all_doctors(a, main_win, existing_npis):
     to_skip   = [d for d in DOCTORS if d["npi"] in existing_npis]
 
     for doc in to_skip:
-        log.info("  [SKIP]   %s %s (NPI %s)", doc["first"], doc["last"], doc["npi"])
+        log.info("  [SKIP]   NPI %s", doc["npi"])
 
     if not to_create:
         log.info("  All doctors already in DB — nothing to do")
@@ -387,8 +388,8 @@ def ensure_all_doctors(a, main_win, existing_npis):
 
     dismiss_popup(a)
     for i, doc in enumerate(to_create, 1):
-        label = f"{doc['first']} {doc['last']} (NPI {doc['npi']})"
-        set_status(f"[1/3] Doctor {i}/{len(to_create)}: {doc['first']} {doc['last']}")
+        label = f"NPI {doc['npi']}"
+        set_status(f"[1/3] Doctor {i}/{len(to_create)}: NPI {doc['npi']}")
         log.info("  [CREATE] %s", label)
         if DRY_RUN:
             log.info("    [DRY RUN] skipping UI — would create doctor")
@@ -514,7 +515,7 @@ def create_customer(p, main_win, a):
         contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
         set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
                        p["doctor"])
-        log.info("    Doctor: %s", p["doctor"])
+        log.info("    Doctor: assigned")
 
         click_inner_tab(dlg, "Diagnosis")
         dlg.child_window(auto_id="TabControl2", control_type="Tab",
@@ -559,10 +560,10 @@ def create_customer(p, main_win, a):
 
         toolbar_click(dlg, "Save")
         dismiss_validation(get_app())
-        log.info("    [saved] %s %s", p["first"], p["last"])
+        log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
 
     except Exception:
-        log.error("    Error mid-form for %s %s — closing window", p["first"], p["last"])
+        log.error("    Error mid-form for MBI %s — closing window", mask_mbi(p["mbi"]))
         try:
             close_window(main_win, "Customer")
         except Exception:
@@ -583,7 +584,7 @@ def ensure_all_customers(a, main_win, existing_mbis):
     to_skip   = [p for p in PATIENTS if p["mbi"] in existing_mbis]
 
     for p in to_skip:
-        log.info("  [SKIP]   %s %s (MBI %s)", p["first"], p["last"], mask_mbi(p["mbi"]))
+        log.info("  [SKIP]   MBI %s", mask_mbi(p["mbi"]))
 
     if not to_create:
         log.info("  All patients already in DB — nothing to do")
@@ -591,8 +592,8 @@ def ensure_all_customers(a, main_win, existing_mbis):
 
     dismiss_popup(a)
     for i, p in enumerate(to_create, 1):
-        label = f"{p['first']} {p['last']} (MBI {mask_mbi(p['mbi'])})"
-        set_status(f"[3/3] Patient {i}/{len(to_create)}: {p['first']} {p['last']}")
+        label = f"MBI {mask_mbi(p['mbi'])}"
+        set_status(f"[3/3] Patient {i}/{len(to_create)}: MBI {mask_mbi(p['mbi'])}")
         log.info("")
         log.info("  [CREATE] %s", label)
         if DRY_RUN:
@@ -604,8 +605,9 @@ def ensure_all_customers(a, main_win, existing_mbis):
                 try:
                     notion.mark_in_dmeworks(_token, p["_notion_page_id"])
                     log.info("    [notion] Status → In DMEworks")
-                except Exception as ne:
-                    log.warning("    [notion] Status update failed: %s", ne)
+                except Exception:
+                    log.warning("    [notion] Status update failed — add to retry list")
+                    _notion_retry.append(p["_notion_page_id"])
         except Exception as e:
             log.error("  [ERROR]  %s — %s", label, e)
 
@@ -634,9 +636,9 @@ def run_verification():
     log.info("  Doctors (%d):", len(DOCTORS))
     for doc in DOCTORS:
         if doc["npi"] in existing_npis:
-            log.info("    [PASS] %s %s — NPI %s found", doc["first"], doc["last"], doc["npi"])
+            log.info("    [PASS] NPI %s found", doc["npi"])
         else:
-            log.error("    [FAIL] %s %s — NPI %s NOT in DB", doc["first"], doc["last"], doc["npi"])
+            log.error("    [FAIL] NPI %s NOT in DB", doc["npi"])
             all_pass = False
 
     log.info("")
@@ -651,7 +653,7 @@ def run_verification():
     log.info("")
     log.info("  Patients (%d):", len(PATIENTS))
     for p in PATIENTS:
-        label = f"{p['first']} {p['last']} (MBI {mask_mbi(p['mbi'])})"
+        label = f"MBI {mask_mbi(p['mbi'])}"
         if p["mbi"] not in existing_mbis:
             log.error("    [FAIL] %s — NOT in DB", label)
             all_pass = False
@@ -749,6 +751,12 @@ def main():
     if not DRY_RUN:
         run_verification()
 
+    if _notion_retry:
+        log.warning("")
+        log.warning("  %d patient(s) need manual Notion status update (→ 'In DMEworks'):", len(_notion_retry))
+        for pid in _notion_retry:
+            log.warning("    notion.so/page/%s", pid)
+
     set_status("DONE — verify records in DMEworks")
     log.info("")
     log.info("=" * 52)
@@ -762,9 +770,7 @@ def main():
     flagged = [p for p in PATIENTS if p.get("notes")]
     if flagged:
         log.info("")
-        log.info("Patient notes to review:")
-        for p in flagged:
-            log.warning("  %s %s: %s", p["first"], p["last"], p["notes"])
+        log.warning("  %d patient(s) have notes — review in Notion", len(flagged))
     log.info("=" * 52)
 
 

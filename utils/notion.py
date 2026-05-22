@@ -77,8 +77,13 @@ def _parse_patient(token: str, page: dict) -> dict | None:
         return None
 
     # Resolve linked doctor
-    rel      = props.get("Doctor", {}).get("relation", [])
-    doc      = _fetch_doctor(token, rel[0]["id"]) if rel else {}
+    rel = props.get("Doctor", {}).get("relation", [])
+    doc = {}
+    if rel:
+        try:
+            doc = _fetch_doctor(token, rel[0]["id"])
+        except Exception:
+            pass  # Missing NPI will be caught by validate_csv
     doc_name = f"{doc.get('first', '')} {doc.get('last', '')}".strip()
 
     # ICD-10: pipe-separated text → list
