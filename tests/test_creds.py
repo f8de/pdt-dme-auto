@@ -1,4 +1,4 @@
-from unittest.mock import patch, call
+from unittest.mock import patch
 import json
 import pytest
 
