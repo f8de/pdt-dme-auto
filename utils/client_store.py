@@ -22,7 +22,7 @@ _ENC_PATH = _DATA_DIR / "clients.enc"
 def _ref_db_path() -> str:
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, "reference.db")
-    return str(Path(__file__).resolve().parent.parent / "reference.db")
+    return str(Path(__file__).resolve().parent.parent / "assets" / "reference.db")
 
 
 # ─── LOW-LEVEL DB I/O ─────────────────────────────────────────────────────────

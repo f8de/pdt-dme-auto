@@ -136,11 +136,11 @@ def main() -> None:
         script = os.path.join(SCRIPT_DIR, "entry_all.py")
         extra_args = ["--client", client_code]
     elif choice == "3":
-        script = os.path.join(SCRIPT_DIR, "utils", "map_policy_dialog.py")
+        script = os.path.join(SCRIPT_DIR, "tools", "map_policy_dialog.py")
     elif choice == "4":
-        script = os.path.join(SCRIPT_DIR, "utils", "map_insurance_company_tabs.py")
+        script = os.path.join(SCRIPT_DIR, "tools", "map_insurance_company_tabs.py")
     elif choice == "5":
-        script = os.path.join(SCRIPT_DIR, "utils", "dmeworks_grid_probe.py")
+        script = os.path.join(SCRIPT_DIR, "tools", "dmeworks_grid_probe.py")
 
     print()
     print(f"  Launching {os.path.relpath(script, SCRIPT_DIR)}...")

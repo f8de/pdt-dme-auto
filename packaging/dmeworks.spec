@@ -1,13 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec — builds dmeworks-entry.exe
-# Usage: pyinstaller dmeworks.spec
+# Run via: python build.py  (from repo root)
+
+import os
+ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 
 a = Analysis(
-    ["entry_all.py"],
-    pathex=[],
+    [os.path.join(ROOT, "entry_all.py")],
+    pathex=[ROOT],
     binaries=[],
     datas=[
-        ("reference.db", "."),
+        (os.path.join(ROOT, "assets", "reference.db"), "."),
     ],
     hiddenimports=[
         "mysql.connector",

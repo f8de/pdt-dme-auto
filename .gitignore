@@ -7,4 +7,5 @@ data/db.json
 data/clients.enc
 dist/
 build/
+deploy/
 *.spec.bak

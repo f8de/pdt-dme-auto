@@ -11,9 +11,9 @@ import os
 import sqlite3
 import sys
 
-_ROOT = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo root
 _CSV  = os.path.join(_ROOT, "data", "medicare_jurisdictions.csv")
-_OUT  = os.path.join(_ROOT, "reference.db")
+_OUT  = os.path.join(_ROOT, "assets", "reference.db")
 
 
 def main():
