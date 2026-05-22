@@ -2,11 +2,10 @@
 DMEworks Patient Entry - Allied Medical Health (all 7 patients).
 Safe to re-run. Skips any record that already exists.
 
-Efficiency: each form is opened ONCE to bulk-read all existing records.
-Only records that are missing get a fresh window open for creation.
-On re-runs where everything exists, only 3 window opens total.
+Usage:
+  python entry_all.py            — normal run
+  python entry_all.py --dry-run  — show what would be created, no UI changes
 
-Save to: C:\\ProgramData\\CybrEdge\\Scripts\\entry_all.py
 Prerequisites: DMEworks open on main screen, all child windows closed.
 """
 
@@ -16,6 +15,8 @@ import time
 import queue
 import threading
 import tkinter as tk
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pywinauto import Application, keyboard
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -23,10 +24,17 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from utils.data_loader import load_doctors, load_patients, load_medicare_map, load_insurance_companies
+from utils.db import fetch_matching_npis, fetch_matching_insurance_names, fetch_matching_mbis, verify_patients
+from utils.logger import get_logger
+
+log = get_logger()
+
+DRY_RUN = "--dry-run" in sys.argv
 
 # ─── STATUS OVERLAY ───────────────────────────────────────────────────────────
 
 _status_q: queue.Queue = queue.Queue()
+
 
 def _overlay_thread() -> None:
     root = tk.Tk()
@@ -57,8 +65,10 @@ def _overlay_thread() -> None:
     root.after(150, _poll)
     root.mainloop()
 
+
 def set_status(msg: str) -> None:
     _status_q.put(msg)
+
 
 T_SHORT = 0.5
 T_MED   = 1.0
@@ -66,10 +76,38 @@ T_LONG  = 1.8
 
 # ─── DATA ─────────────────────────────────────────────────────────────────────
 
-MEDICARE_BY_STATE    = load_medicare_map()
-DOCTORS              = load_doctors()
-PATIENTS             = load_patients()
-INSURANCE_COMPANIES  = load_insurance_companies()
+MEDICARE_BY_STATE   = load_medicare_map()
+DOCTORS             = load_doctors()
+PATIENTS            = load_patients()
+INSURANCE_COMPANIES = load_insurance_companies()
+
+# ─── PRE-VALIDATION ───────────────────────────────────────────────────────────
+
+def validate_csv() -> list[str]:
+    errors = []
+    for doc in DOCTORS:
+        if not doc.get("npi"):
+            errors.append(f"Doctor {doc['last']}, {doc['first']}: missing NPI")
+    for co in INSURANCE_COMPANIES:
+        if not co.get("name"):
+            errors.append("Insurance companies CSV: row with missing name")
+    for p in PATIENTS:
+        label = f"Patient {p['last']}, {p['first']}"
+        if not p.get("mbi"):
+            errors.append(f"{label}: missing MBI")
+        if not p.get("dob"):
+            errors.append(f"{label}: missing DOB")
+        else:
+            try:
+                datetime.strptime(p["dob"], "%m/%d/%Y")
+            except ValueError:
+                errors.append(f"{label}: invalid DOB '{p['dob']}' — expected MM/DD/YYYY")
+        state = p.get("state", "")
+        if not state:
+            errors.append(f"{label}: missing state")
+        elif state not in MEDICARE_BY_STATE:
+            errors.append(f"{label}: state '{state}' has no DMERC mapping")
+    return errors
 
 # ─── CORE UTILITIES ───────────────────────────────────────────────────────────
 
@@ -100,7 +138,7 @@ def dismiss_save_dialog(a):
         main = a.window(title="DMEWorks", auto_id="FormMain")
         no_btn = main.child_window(title="No", control_type="Button")
         if no_btn.exists(timeout=1):
-            print("    [save dialog] clicking No")
+            log.debug("Save dialog — clicking No")
             no_btn.click_input()
             time.sleep(T_SHORT)
             return True
@@ -113,7 +151,7 @@ def dismiss_validation(a):
         try:
             dlg = a.window(title_re=f".*{frag}.*")
             if dlg.exists(timeout=1):
-                print(f"    [validation] {dlg.window_text()}")
+                log.warning("Validation dialog: %s", dlg.window_text())
                 dlg.child_window(title="OK", control_type="Button").click_input()
                 time.sleep(T_SHORT)
                 return True
@@ -142,7 +180,7 @@ def set_field(win, auto_id, value):
         win.child_window(auto_id=auto_id, found_index=0).set_edit_text(value)
         time.sleep(0.2)
     except Exception as e:
-        print(f"    [warn] set_field({auto_id}): {e}")
+        log.warning("set_field(%s): %s", auto_id, e)
 
 def toolbar_click(win, title):
     tb = win.child_window(auto_id="tlbMain", control_type="ToolBar", found_index=0)
@@ -159,7 +197,7 @@ def close_window(main_win, keyword):
             time.sleep(T_SHORT)
             dismiss_save_dialog(get_app())
     except Exception as e:
-        print(f"    [warn] close_window({keyword}): {e}")
+        log.warning("close_window(%s): %s", keyword, e)
 
 def open_fresh_window(main_win, a, keyword, menu_path):
     if find_mdi_child(main_win, keyword):
@@ -178,56 +216,13 @@ def go_work_area(w):
             title="Work Area", control_type="TabItem").click_input()
         time.sleep(T_MED)
     except Exception as e:
-        print(f"    [warn] go_work_area: {e}")
+        log.warning("go_work_area: %s", e)
 
 def click_inner_tab(w, title):
     w.child_window(auto_id="TabControl1", control_type="Tab",
                    found_index=0).child_window(
         title=title, control_type="TabItem").click_input()
     time.sleep(T_MED)
-
-# ─── GRID CELL READING ────────────────────────────────────────────────────────
-
-def get_cell_value(row, column_keyword):
-    try:
-        for cell in row.children():
-            cell_name = cell.window_text()
-            if column_keyword.lower() in cell_name.lower() and "Row" in cell_name:
-                try:
-                    return (cell.get_value() or "").strip()
-                except Exception:
-                    return ""
-    except Exception:
-        pass
-    return ""
-
-def read_all_rows(w, columns):
-    """
-    Do a blank search and read the specified columns from every row.
-    Returns a list of dicts keyed by column keyword (lowercase values).
-    One window open reads everything in memory for batch comparison.
-    """
-    toolbar_click(w, "Search")
-    dismiss_save_dialog(get_app())
-    time.sleep(T_SHORT)
-    records = []
-    try:
-        grid = w.child_window(title="DataGridView", control_type="Table",
-                              found_index=0)
-        data_rows = [c for c in grid.children()
-                     if c.element_info.control_type == "Custom"
-                     and c.window_text() != "Top Row"]
-        for row in data_rows:
-            rec = {col.lower(): get_cell_value(row, col).lower() for col in columns}
-            records.append(rec)
-        print(f"    [bulk read] {len(records)} existing record(s) loaded")
-    except Exception as e:
-        print(f"    [warn] read_all_rows: {e}")
-    return records
-
-def row_matches(record, checks):
-    """True if a record dict matches all check values (case-insensitive keys and values)."""
-    return all(record.get(k.lower(), "") == v.lower() for k, v in checks.items())
 
 # ─── COMBO AND DOB ────────────────────────────────────────────────────────────
 
@@ -253,7 +248,7 @@ def set_combo_text(pane, value):
         combo.type_keys("{ENTER}")
         time.sleep(0.5)
     except Exception as e:
-        print(f"    [warn] set_combo_text('{value}'): {e}")
+        log.warning("set_combo_text('%s'): %s", value, e)
 
 def set_dob(win, dob_str):
     try:
@@ -274,68 +269,80 @@ def set_dob(win, dob_str):
         keyboard.send_keys(yyyy)
         time.sleep(0.3)
     except Exception as e:
-        print(f"    [warn] set_dob: {e}")
+        log.warning("set_dob: %s", e)
 
 # ─── DOCTORS ──────────────────────────────────────────────────────────────────
 
 def create_doctor(doc, main_win, a):
-    label = f"{doc['first']} {doc['last']}, NPI {doc['npi']}"
+    label = f"{doc['first']} {doc['last']} (NPI {doc['npi']})"
     w = open_fresh_window(main_win, a, "Doctor", "Maintain->Doctor")
     if not w:
-        print(f"  [error] Doctor window not found for {label}"); return
+        raise RuntimeError(f"Doctor window not found for {label}")
+    try:
+        go_work_area(w)
+        toolbar_click(w, "New")
+        time.sleep(T_MED)
+        dismiss_save_dialog(get_app())
+        w = find_mdi_child(main_win, "Doctor")
 
-    go_work_area(w)
-    toolbar_click(w, "New")
-    time.sleep(T_MED)
-    dismiss_save_dialog(get_app())
-    w = find_mdi_child(main_win, "Doctor")
+        set_field(w, "txtLastName",   doc["last"])
+        set_field(w, "txtFirstName",  doc["first"])
+        set_field(w, "txtMiddleName", doc["mi"])
+        set_field(w, "txtSuffix",     doc["suffix"])
 
-    set_field(w, "txtLastName",   doc["last"])
-    set_field(w, "txtFirstName",  doc["first"])
-    set_field(w, "txtMiddleName", doc["mi"])
-    set_field(w, "txtSuffix",     doc["suffix"])
+        click_inner_tab(w, "Address")
+        set_field(w, "txtAddress1", doc["address1"])
+        set_field(w, "txtCity",     doc["city"])
+        set_field(w, "txtState",    doc["state"])
+        set_field(w, "txtZip",      doc["zip"])
+        set_field(w, "txtPhone",    fmt_phone(doc["phone"]))
 
-    click_inner_tab(w, "Address")
-    set_field(w, "txtAddress1", doc["address1"])
-    set_field(w, "txtCity",     doc["city"])
-    set_field(w, "txtState",    doc["state"])
-    set_field(w, "txtZip",      doc["zip"])
-    set_field(w, "txtPhone",    fmt_phone(doc["phone"]))
+        click_inner_tab(w, "Numbers")
+        set_field(w, "txtNPI", doc["npi"])
 
-    click_inner_tab(w, "Numbers")
-    set_field(w, "txtNPI", doc["npi"])
-
-    toolbar_click(w, "Save")
-    dismiss_validation(get_app())
-    print(f"  [saved] {label}")
+        toolbar_click(w, "Save")
+        dismiss_validation(get_app())
+        log.info("    [saved] %s", label)
+    except Exception:
+        log.error("    Error creating doctor %s — closing window", label)
+        try:
+            close_window(main_win, "Doctor")
+        except Exception:
+            pass
+        raise
     close_window(main_win, "Doctor")
     time.sleep(T_SHORT)
 
-def ensure_all_doctors():
-    print("\n[1/3] Doctors")
-    print("-" * 40)
-    a, main_win = get_main()
+
+def ensure_all_doctors(a, main_win, existing_npis):
+    log.info("")
+    log.info("=" * 52)
+    log.info("[1/3] DOCTORS")
+    log.info("=" * 52)
+    log.info("DB check: %d/%d doctor(s) already exist", len(existing_npis), len(DOCTORS))
+
+    to_create = [d for d in DOCTORS if d["npi"] not in existing_npis]
+    to_skip   = [d for d in DOCTORS if d["npi"] in existing_npis]
+
+    for doc in to_skip:
+        log.info("  [SKIP]   %s %s (NPI %s)", doc["first"], doc["last"], doc["npi"])
+
+    if not to_create:
+        log.info("  All doctors already in DB — nothing to do")
+        return
+
     dismiss_popup(a)
-
-    # One open to read all existing doctors
-    w = open_fresh_window(main_win, a, "Doctor", "Maintain->Doctor")
-    existing = read_all_rows(w, ["Last Name", "First Name", "Address"])
-    close_window(main_win, "Doctor")
-
-    # Compare in memory, create only what's missing
-    for doc in DOCTORS:
-        set_status(f"[1/3] Doctor: {doc['first']} {doc['last']}")
-        checks = {"Last Name":  doc["last"],
-                  "First Name": doc["first"],
-                  "Address":    doc["address1"]}
-        if any(row_matches(e, checks) for e in existing):
-            print(f"  [skip] {doc['first']} {doc['last']} already exists")
-        else:
-            print(f"  [not found] creating {doc['first']} {doc['last']}")
-            try:
-                create_doctor(doc, main_win, a)
-            except Exception as e:
-                print(f"  [error] {doc['last']}: {e}")
+    for i, doc in enumerate(to_create, 1):
+        label = f"{doc['first']} {doc['last']} (NPI {doc['npi']})"
+        set_status(f"[1/3] Doctor {i}/{len(to_create)}: {doc['first']} {doc['last']}")
+        log.info("  [CREATE] %s", label)
+        if DRY_RUN:
+            log.info("    [DRY RUN] skipping UI — would create doctor")
+            continue
+        try:
+            create_doctor(doc, main_win, a)
+        except Exception as e:
+            log.error("  [ERROR]  %s — %s", label, e)
 
 # ─── INSURANCE COMPANIES ──────────────────────────────────────────────────────
 
@@ -343,49 +350,55 @@ def create_insurance_company(name, main_win, a):
     w = open_fresh_window(main_win, a, "Insurance Company",
                           "Maintain->Insurance Company")
     if not w:
-        print(f"  [error] Insurance Company window not found for {name}"); return
-    go_work_area(w)
-    toolbar_click(w, "New")
-    time.sleep(T_MED)
-    dismiss_save_dialog(get_app())
-    w = find_mdi_child(main_win, "Insurance Company")
-    set_field(w, "txtName", name)
-    toolbar_click(w, "Save")
-    dismiss_validation(get_app())
-    print(f"  [saved] {name}")
+        raise RuntimeError(f"Insurance Company window not found for {name}")
+    try:
+        go_work_area(w)
+        toolbar_click(w, "New")
+        time.sleep(T_MED)
+        dismiss_save_dialog(get_app())
+        w = find_mdi_child(main_win, "Insurance Company")
+        set_field(w, "txtName", name)
+        toolbar_click(w, "Save")
+        dismiss_validation(get_app())
+        log.info("    [saved] %s", name)
+    except Exception:
+        log.error("    Error creating insurance company %s — closing window", name)
+        try:
+            close_window(main_win, "Insurance Company")
+        except Exception:
+            pass
+        raise
     close_window(main_win, "Insurance Company")
     time.sleep(T_SHORT)
 
-def ensure_all_insurance_companies():
-    print("\n[2/3] Insurance companies")
-    print("-" * 40)
-    a, main_win = get_main()
+
+def ensure_all_insurance_companies(a, main_win, existing_names):
+    log.info("")
+    log.info("=" * 52)
+    log.info("[2/3] INSURANCE COMPANIES")
+    log.info("=" * 52)
+    log.info("DB check: %d/%d company(s) already exist", len(existing_names), len(INSURANCE_COMPANIES))
+
     dismiss_popup(a)
-
-    # One open to read all existing insurance companies
-    w = open_fresh_window(main_win, a, "Insurance Company",
-                          "Maintain->Insurance Company")
-    existing = read_all_rows(w, ["Name"])
-    close_window(main_win, "Insurance Company")
-
-    existing_names = {e["name"] for e in existing}
-
-    for co in INSURANCE_COMPANIES:
+    for i, co in enumerate(INSURANCE_COMPANIES, 1):
         name = co["name"]
         is_medicare = co["type"] == "MEDICARE"
-        set_status(f"[2/3] Insurance: {name}")
+        set_status(f"[2/3] Insurance {i}/{len(INSURANCE_COMPANIES)}: {name}")
+
         if name.lower() in existing_names:
-            status = "[verified]" if is_medicare else "[skip]"
-            print(f"  {status} {name} exists")
+            tag = "[OK]    " if is_medicare else "[SKIP]  "
+            log.info("  %s %s", tag, name)
+        elif is_medicare:
+            log.error("  [ERROR]  '%s' — not found, must be created manually in DMEworks", name)
         else:
-            if is_medicare:
-                print(f"  [ERROR] '{name}' not found. Must be set up manually.")
-            else:
-                print(f"  [not found] creating {name}")
-                try:
-                    create_insurance_company(name, main_win, a)
-                except Exception as e:
-                    print(f"  [error] {name}: {e}")
+            log.info("  [CREATE] %s", name)
+            if DRY_RUN:
+                log.info("    [DRY RUN] skipping UI — would create insurance company")
+                continue
+            try:
+                create_insurance_company(name, main_win, a)
+            except Exception as e:
+                log.error("  [ERROR]  %s — %s", name, e)
 
 # ─── CUSTOMERS ────────────────────────────────────────────────────────────────
 
@@ -401,150 +414,308 @@ def add_insurance_row(pol_dialog, ins_company, ins_type, policy, group=""):
         pol_dialog.child_window(auto_id="btnOK", found_index=0).click_input()
         time.sleep(T_MED)
         if dismiss_validation(get_app()):
-            print(f"    [warn] validation on insurance row - check manually")
+            log.warning("    Validation on insurance row — check manually")
         else:
-            print(f"    [ins] {ins_company} ({ins_type}) | policy {policy}")
+            log.info("    [ins] %s (%s) | policy %s", ins_company, ins_type, policy)
     except Exception as e:
-        print(f"    [error] add_insurance_row: {e}")
+        log.error("    add_insurance_row failed: %s", e)
         try:
-            pol_dialog.child_window(auto_id="btnCancel",
-                                    found_index=0).click_input()
+            pol_dialog.child_window(auto_id="btnCancel", found_index=0).click_input()
         except Exception:
             pass
+
 
 def create_customer(p, main_win, a):
     medicare_name = MEDICARE_BY_STATE.get(p["state"])
     if not medicare_name:
-        print(f"  [error] No DMERC mapping for state '{p['state']}'"); return
+        raise ValueError(f"No DMERC mapping for state '{p['state']}'")
 
     dlg = open_fresh_window(main_win, a, "Customer", "Maintain->Customer")
     if not dlg:
-        print("  [error] Customer window not found"); return
+        raise RuntimeError("Customer window not found")
 
-    go_work_area(dlg)
-    toolbar_click(dlg, "New")
-    time.sleep(T_MED)
-    dismiss_save_dialog(get_app())
-    dlg = main_win.child_window(auto_id="FormCustomer", control_type="Window",
-                                found_index=0)
+    try:
+        go_work_area(dlg)
+        toolbar_click(dlg, "New")
+        time.sleep(T_MED)
+        dismiss_save_dialog(get_app())
+        dlg = main_win.child_window(auto_id="FormCustomer", control_type="Window",
+                                    found_index=0)
 
-    set_field(dlg, "txtLastName",   p["last"])
-    set_field(dlg, "txtFirstName",  p["first"])
-    set_field(dlg, "txtMiddleName", p["mi"])
-    set_field(dlg, "txtSuffix",     p["suffix"])
+        set_field(dlg, "txtLastName",   p["last"])
+        set_field(dlg, "txtFirstName",  p["first"])
+        set_field(dlg, "txtMiddleName", p["mi"])
+        set_field(dlg, "txtSuffix",     p["suffix"])
 
-    click_inner_tab(dlg, "General")
-    set_dob(dlg, p["dob"])
-    set_field(dlg, "txtAddress1", p["address1"])
-    set_field(dlg, "txtCity",     p["city"])
-    set_field(dlg, "txtState",    p["state"])
-    set_field(dlg, "txtZip",      p["zip"])
-    set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
-    print(f"  General: {p['city']}, {p['state']} {p['zip']} | DOB {p['dob']}")
+        click_inner_tab(dlg, "General")
+        set_dob(dlg, p["dob"])
+        set_field(dlg, "txtAddress1", p["address1"])
+        set_field(dlg, "txtCity",     p["city"])
+        set_field(dlg, "txtState",    p["state"])
+        set_field(dlg, "txtZip",      p["zip"])
+        set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
+        log.info("    General: %s, %s %s | DOB %s", p["city"], p["state"], p["zip"], p["dob"])
 
-    click_inner_tab(dlg, "Contacts")
-    contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
-    doctor1_pane  = contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0)
-    set_combo_text(doctor1_pane, p["doctor"])
-    print(f"  Doctor: {p['doctor']}")
+        click_inner_tab(dlg, "Contacts")
+        contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
+        set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
+                       p["doctor"])
+        log.info("    Doctor: %s", p["doctor"])
 
-    click_inner_tab(dlg, "Diagnosis")
-    dlg.child_window(auto_id="TabControl2", control_type="Tab",
-                     found_index=0).child_window(
-        title="ICD 10", control_type="TabItem").click_input()
-    time.sleep(T_MED)
-    icd_pane = dlg.child_window(auto_id="TabPage3", found_index=0)
-    for i, code in enumerate(p["icd10"], start=1):
-        try:
-            slot = icd_pane.child_window(auto_id=f"eddICD10_{i:02d}")
-            slot.child_window(auto_id="txtInternal").set_edit_text(code)
-            time.sleep(0.3)
-        except Exception as e:
-            print(f"    [warn] ICD slot {i}: {e}")
-    print(f"  ICD 10: {', '.join(p['icd10'])}")
+        click_inner_tab(dlg, "Diagnosis")
+        dlg.child_window(auto_id="TabControl2", control_type="Tab",
+                         found_index=0).child_window(
+            title="ICD 10", control_type="TabItem").click_input()
+        time.sleep(T_MED)
+        icd_pane = dlg.child_window(auto_id="TabPage3", found_index=0)
+        for i, code in enumerate(p["icd10"], start=1):
+            try:
+                slot = icd_pane.child_window(auto_id=f"eddICD10_{i:02d}")
+                slot.child_window(auto_id="txtInternal").set_edit_text(code)
+                time.sleep(0.3)
+            except Exception as e:
+                log.warning("    ICD slot %d (%s): %s", i, code, e)
+        log.info("    ICD-10: %s", ", ".join(p["icd10"]))
 
-    click_inner_tab(dlg, "Insurance")
-    ins_pane  = dlg.child_window(auto_id="tpInsurance", found_index=0)
-    ctrl_pane = ins_pane.child_window(auto_id="ControlCustomerInsurance1")
+        click_inner_tab(dlg, "Insurance")
+        ins_pane  = dlg.child_window(auto_id="tpInsurance", found_index=0)
+        ctrl_pane = ins_pane.child_window(auto_id="ControlCustomerInsurance1")
 
-    ctrl_pane.child_window(auto_id="Panel1").child_window(
-        auto_id="btnAdd").click_input()
-    time.sleep(T_LONG)
-    pol = find_mdi_child(main_win, "Policy Information")
-    if pol:
-        add_insurance_row(pol, medicare_name, "MEDICARE", p["mbi"])
-    else:
-        print("  [error] Policy Information dialog not found (primary)")
-
-    if p.get("secondary"):
-        sec = p["secondary"]
         ctrl_pane.child_window(auto_id="Panel1").child_window(
             auto_id="btnAdd").click_input()
         time.sleep(T_LONG)
-        pol2 = find_mdi_child(main_win, "Policy Information")
-        if pol2:
-            add_insurance_row(pol2, sec["ins_company"],
-                              sec["ins_type"], sec["policy"],
-                              sec.get("group", ""))
+        pol = find_mdi_child(main_win, "Policy Information")
+        if pol:
+            add_insurance_row(pol, medicare_name, "MEDICARE", p["mbi"])
         else:
-            print("  [error] Policy Information dialog not found (secondary)")
+            log.error("    Policy Information dialog not found (primary)")
 
-    toolbar_click(dlg, "Save")
-    dismiss_validation(get_app())
-    print(f"  [saved] {p['first']} {p['last']}")
+        if p.get("secondary"):
+            sec = p["secondary"]
+            ctrl_pane.child_window(auto_id="Panel1").child_window(
+                auto_id="btnAdd").click_input()
+            time.sleep(T_LONG)
+            pol2 = find_mdi_child(main_win, "Policy Information")
+            if pol2:
+                add_insurance_row(pol2, sec["ins_company"],
+                                  sec["ins_type"], sec["policy"],
+                                  sec.get("group", ""))
+            else:
+                log.error("    Policy Information dialog not found (secondary)")
+
+        toolbar_click(dlg, "Save")
+        dismiss_validation(get_app())
+        log.info("    [saved] %s %s", p["first"], p["last"])
+
+    except Exception:
+        log.error("    Error mid-form for %s %s — closing window", p["first"], p["last"])
+        try:
+            close_window(main_win, "Customer")
+        except Exception:
+            pass
+        raise
+
     close_window(main_win, "Customer")
 
-def ensure_all_customers():
-    print("\n[3/3] Patients")
-    print("-" * 40)
-    a, main_win = get_main()
+
+def ensure_all_customers(a, main_win, existing_mbis):
+    log.info("")
+    log.info("=" * 52)
+    log.info("[3/3] PATIENTS")
+    log.info("=" * 52)
+    log.info("DB check: %d/%d patient(s) already exist", len(existing_mbis), len(PATIENTS))
+
+    to_create = [p for p in PATIENTS if p["mbi"] not in existing_mbis]
+    to_skip   = [p for p in PATIENTS if p["mbi"] in existing_mbis]
+
+    for p in to_skip:
+        log.info("  [SKIP]   %s %s (MBI %s)", p["first"], p["last"], p["mbi"])
+
+    if not to_create:
+        log.info("  All patients already in DB — nothing to do")
+        return
+
     dismiss_popup(a)
+    for i, p in enumerate(to_create, 1):
+        label = f"{p['first']} {p['last']} (MBI {p['mbi']})"
+        set_status(f"[3/3] Patient {i}/{len(to_create)}: {p['first']} {p['last']}")
+        log.info("")
+        log.info("  [CREATE] %s", label)
+        if DRY_RUN:
+            log.info("    [DRY RUN] skipping UI — would create patient")
+            continue
+        try:
+            create_customer(p, main_win, a)
+        except Exception as e:
+            log.error("  [ERROR]  %s — %s", label, e)
 
-    # One open to read all existing customers
-    dlg = open_fresh_window(main_win, a, "Customer", "Maintain->Customer")
-    existing = read_all_rows(dlg, ["Last Name", "First Name", "Phone"])
-    close_window(main_win, "Customer")
+# ─── VERIFICATION PASS ────────────────────────────────────────────────────────
 
-    for p in PATIENTS:
-        set_status(f"[3/3] Patient: {p['first']} {p['last']}")
-        print(f"\n  --- {p['first']} {p['last']} ---")
-        checks = {"Last Name":  p["last"],
-                  "First Name": p["first"],
-                  "Phone":      fmt_phone(p["phone"])}
-        if any(row_matches(e, checks) for e in existing):
-            print(f"  [skip] already exists")
+def run_verification():
+    log.info("")
+    log.info("=" * 52)
+    log.info("VERIFICATION PASS")
+    log.info("=" * 52)
+    set_status("Verifying — querying DB...")
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_npis    = pool.submit(fetch_matching_npis,            [d["npi"]  for d in DOCTORS])
+        f_names   = pool.submit(fetch_matching_insurance_names, [c["name"] for c in INSURANCE_COMPANIES])
+        f_mbis    = pool.submit(fetch_matching_mbis,            [p["mbi"]  for p in PATIENTS])
+        f_details = pool.submit(verify_patients, PATIENTS)
+        existing_npis   = f_npis.result()
+        existing_names  = f_names.result()
+        existing_mbis   = f_mbis.result()
+        patient_details = f_details.result()
+
+    all_pass = True
+
+    # Doctors
+    log.info("")
+    log.info("  Doctors (%d):", len(DOCTORS))
+    for doc in DOCTORS:
+        if doc["npi"] in existing_npis:
+            log.info("    [PASS] %s %s — NPI %s found", doc["first"], doc["last"], doc["npi"])
         else:
-            try:
-                create_customer(p, main_win, a)
-            except Exception as e:
-                print(f"  [error] {p['last']}: {e}")
+            log.error("    [FAIL] %s %s — NPI %s NOT in DB", doc["first"], doc["last"], doc["npi"])
+            all_pass = False
+
+    # Insurance
+    log.info("")
+    log.info("  Insurance Companies (%d):", len(INSURANCE_COMPANIES))
+    for co in INSURANCE_COMPANIES:
+        if co["name"].lower() in existing_names:
+            log.info("    [PASS] %s", co["name"])
+        else:
+            log.error("    [FAIL] %s — NOT in DB", co["name"])
+            all_pass = False
+
+    # Patients — existence + field-level check
+    log.info("")
+    log.info("  Patients (%d):", len(PATIENTS))
+    for p in PATIENTS:
+        label = f"{p['first']} {p['last']} (MBI {p['mbi']})"
+        if p["mbi"] not in existing_mbis:
+            log.error("    [FAIL] %s — NOT in DB", label)
+            all_pass = False
+            continue
+
+        row = patient_details.get(p["mbi"])
+        if not row:
+            log.warning("    [WARN] %s — MBI found in insurance table but no joined row returned", label)
+            all_pass = False
+            continue
+
+        issues = []
+        if row["first"].strip().lower() != p["first"].lower():
+            issues.append(f"FirstName DB='{row['first']}' CSV='{p['first']}'")
+        if row["last"].strip().lower() != p["last"].lower():
+            issues.append(f"LastName DB='{row['last']}' CSV='{p['last']}'")
+
+        dob_db = row["dob"]
+        dob_db_str = dob_db.strftime("%m/%d/%Y") if hasattr(dob_db, "strftime") else str(dob_db)
+        if dob_db_str != p["dob"]:
+            issues.append(f"DOB DB='{dob_db_str}' CSV='{p['dob']}'")
+
+        if (row["state"] or "").strip().upper() != p["state"].upper():
+            issues.append(f"State DB='{row['state']}' CSV='{p['state']}'")
+
+        if not row.get("doctor_npi"):
+            issues.append("no doctor assigned (Doctor1_ID is NULL)")
+
+        if issues:
+            for issue in issues:
+                log.warning("    [WARN] %s — %s", label, issue)
+            all_pass = False
+        else:
+            log.info("    [PASS] %s — all fields match, doctor assigned", label)
+
+    # Summary
+    log.info("")
+    if all_pass:
+        log.info("  RESULT: ALL CHECKS PASSED")
+    else:
+        log.warning("  RESULT: SOME CHECKS FAILED — review above and verify in DMEworks")
+    log.info("=" * 52)
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
-    set_status("Starting — Allied Medical (7 patients)")
-    print("\n" + "=" * 60)
-    print("DMEworks Entry - Allied Medical Health (7 patients)")
-    print("=" * 60)
+    if DRY_RUN:
+        log.info("*** DRY RUN MODE — no changes will be made to DMEworks ***")
 
-    ensure_all_doctors()
-    ensure_all_insurance_companies()
-    ensure_all_customers()
+    set_status("Starting — Allied Medical (7 patients)")
+    log.info("=" * 52)
+    log.info("DMEworks Entry — Allied Medical Health (%d patients)", len(PATIENTS))
+    log.info("=" * 52)
+
+    # 1. Validate CSV data before touching anything
+    log.info("")
+    log.info("Pre-validating CSV data...")
+    errors = validate_csv()
+    if errors:
+        log.error("CSV validation failed — fix before running:")
+        for err in errors:
+            log.error("  %s", err)
+        sys.exit(1)
+    log.info("CSV validation passed (%d doctors, %d companies, %d patients)",
+             len(DOCTORS), len(INSURANCE_COMPANIES), len(PATIENTS))
+
+    # 2. Fire all DB queries in parallel
+    log.info("")
+    log.info("Running DB existence checks...")
+    set_status("Checking DB...")
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_npis  = pool.submit(fetch_matching_npis,            [d["npi"]  for d in DOCTORS])
+        f_names = pool.submit(fetch_matching_insurance_names, [c["name"] for c in INSURANCE_COMPANIES])
+        f_mbis  = pool.submit(fetch_matching_mbis,            [p["mbi"]  for p in PATIENTS])
+        existing_npis  = f_npis.result()
+        existing_names = f_names.result()
+        existing_mbis  = f_mbis.result()
+
+    need_doctors = sum(1 for d in DOCTORS if d["npi"] not in existing_npis)
+    need_ins     = sum(1 for c in INSURANCE_COMPANIES
+                       if c["name"].lower() not in existing_names and c["type"] != "MEDICARE")
+    need_patients = sum(1 for p in PATIENTS if p["mbi"] not in existing_mbis)
+    log.info("Need to create: %d doctor(s), %d insurance company(s), %d patient(s)",
+             need_doctors, need_ins, need_patients)
+
+    # 3. Connect to DMEworks once for all UI work
+    if not DRY_RUN and (need_doctors or need_ins or need_patients):
+        log.info("")
+        log.info("Connecting to DMEworks...")
+        a, main_win = get_main()
+        log.info("Connected")
+    else:
+        a, main_win = None, None
+
+    # 4. Entry phases
+    ensure_all_doctors(a, main_win, existing_npis)
+    ensure_all_insurance_companies(a, main_win, existing_names)
+    ensure_all_customers(a, main_win, existing_mbis)
+
+    # 5. Verification pass (skip in dry-run — nothing was entered)
+    if not DRY_RUN:
+        run_verification()
 
     set_status("DONE — verify records in DMEworks")
-    print("\n" + "=" * 60)
-    print("DONE. Verify each record in DMEworks:")
-    print("  General: name, DOB, address, phone")
-    print("  Contacts: Doctor1 assigned")
-    print("  Diagnosis > ICD 10: all codes entered")
-    print("  Insurance: Medicare DMERC + MBI, secondary if applicable")
+    log.info("")
+    log.info("=" * 52)
+    log.info("DONE")
+    if not DRY_RUN:
+        log.info("Manual spot-check in DMEworks:")
+        log.info("  General   : name, DOB, address, phone")
+        log.info("  Contacts  : Doctor1 assigned")
+        log.info("  Diagnosis : ICD-10 codes")
+        log.info("  Insurance : Medicare DMERC + MBI, secondary if applicable")
     flagged = [p for p in PATIENTS if p.get("notes")]
     if flagged:
-        print()
-        print("  NOTES:")
+        log.info("")
+        log.info("Patient notes to review:")
         for p in flagged:
-            print(f"    {p['first']} {p['last']}: {p['notes']}")
-    print("=" * 60)
+            log.warning("  %s %s: %s", p["first"], p["last"], p["notes"])
+    log.info("=" * 52)
+
 
 if __name__ == "__main__":
     _t = threading.Thread(target=_overlay_thread, daemon=True)
@@ -552,5 +723,5 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        _status_q.put(None)  # close overlay
+        _status_q.put(None)
         _t.join(timeout=3)

@@ -1,4 +1,6 @@
 graphify-out/
+logs/
 __pycache__/
 *.pyc
 *.pyo
+data/db.json

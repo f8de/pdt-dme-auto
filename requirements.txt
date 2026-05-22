@@ -1,3 +1,4 @@
 pywinauto>=0.6.8
 pywin32>=305
 comtypes>=1.2.0
+mysql-connector-python>=8.0
