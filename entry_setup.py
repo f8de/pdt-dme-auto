@@ -34,6 +34,9 @@ def run_setup() -> None:
     if not token:
         print("  Error: token is required.")
         sys.exit(1)
+    if not token.startswith("ntn_"):
+        print("  Error: Notion token must start with 'ntn_'. Check your token.")
+        sys.exit(1)
     set_notion_token(token)
     print("  [OK] Notion token stored.")
     print()

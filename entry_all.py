@@ -665,9 +665,9 @@ def run_verification():
 
         issues = []
         if row["first"].strip().lower() != p["first"].lower():
-            issues.append(f"FirstName DB='{row['first']}' CSV='{p['first']}'")
+            issues.append("FirstName mismatch (DB != record)")
         if row["last"].strip().lower() != p["last"].lower():
-            issues.append(f"LastName DB='{row['last']}' CSV='{p['last']}'")
+            issues.append("LastName mismatch (DB != record)")
 
         dob_db = row["dob"]
         dob_db_str = dob_db.strftime("%m/%d/%Y") if hasattr(dob_db, "strftime") else str(dob_db)
