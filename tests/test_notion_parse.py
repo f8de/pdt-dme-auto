@@ -197,6 +197,45 @@ def test_fetch_doctor_parses_fields():
     assert result["phone"] == "3125550100"
 
 
+def test_parse_patient_no_doctor_relation():
+    import utils.notion as n
+    # Build page with empty Doctor relation
+    page = _sample_patient_page()
+    page["properties"]["Doctor"] = {"relation": []}
+    result = n._parse_patient("t", page)
+    assert result is not None
+    assert result["doctor"] == ""
+    assert result["_doctor"] == {}
+
+
+def test_fetch_work_queue_paginates_and_returns_all():
+    import utils.notion as n
+
+    page1 = _sample_patient_page(page_id="p1", mbi="AAA0001", first="Alice", last="Smith")
+    page2 = _sample_patient_page(page_id="p2", mbi="BBB0002", first="Bob", last="Jones")
+
+    resp1 = MagicMock()
+    resp1.raise_for_status = MagicMock()
+    resp1.json.return_value = {"results": [page1], "has_more": True, "next_cursor": "cursor-abc"}
+
+    resp2 = MagicMock()
+    resp2.raise_for_status = MagicMock()
+    resp2.json.return_value = {"results": [page2], "has_more": False}
+
+    doctor_stub = {"first": "J", "last": "S", "mi": "", "suffix": "", "npi": "1", "address1": "", "city": "", "state": "IL", "zip": "", "phone": ""}
+
+    with patch("requests.post", side_effect=[resp1, resp2]) as mock_post, \
+         patch("utils.notion._fetch_doctor", return_value=doctor_stub):
+        result = n.fetch_work_queue("fake-token")
+
+    assert len(result) == 2
+    assert result[0]["mbi"] == "AAA0001"
+    assert result[1]["mbi"] == "BBB0002"
+    # Verify second call included the cursor
+    second_call_payload = mock_post.call_args_list[1][1]["json"]
+    assert second_call_payload["start_cursor"] == "cursor-abc"
+
+
 def test_mark_in_dmeworks_calls_patch():
     import utils.notion as n
     mock_resp = MagicMock()

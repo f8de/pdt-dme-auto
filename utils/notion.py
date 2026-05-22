@@ -91,7 +91,7 @@ def _parse_patient(token: str, page: dict) -> dict | None:
     if sec_raw:
         try:
             secondary = json.loads(sec_raw)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError:
             secondary = None
 
     return {
