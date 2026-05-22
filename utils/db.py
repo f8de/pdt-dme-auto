@@ -1,7 +1,7 @@
 """
 Targeted DB checks and verification against the DMEworks company schema.
-Credentials loaded from clients.enc via ClientStore. Read-only — never write directly.
-Call db.configure(client_code) once at startup before any query function.
+Credentials loaded from Windows Credential Manager (preferred) or clients.enc fallback.
+Read-only — never write directly. Call db.configure(client_code) once at startup.
 """
 
 import mysql.connector
@@ -10,12 +10,16 @@ _conn_params: dict | None = None
 
 
 def configure(client_code: str) -> None:
-    """Load DB credentials for the given client from clients.enc."""
+    """Load DB credentials — Windows Credential Manager preferred, clients.enc fallback."""
     global _conn_params
-    from utils.client_store import ClientStore
-    store = ClientStore(client_code)
-    _conn_params = store.db_config
-    store.close()
+    from utils.creds import get_db_config, has_db_config
+    if has_db_config(client_code):
+        _conn_params = get_db_config(client_code)
+    else:
+        from utils.client_store import ClientStore
+        store = ClientStore(client_code)
+        _conn_params = store.db_config
+        store.close()
 
 
 def _connect():
