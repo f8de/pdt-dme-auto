@@ -75,9 +75,26 @@ def main() -> None:
 
     print("  All checks passed.")
     print()
+
+    # List available clients
+    client_code = None
+    try:
+        sys.path.insert(0, SCRIPT_DIR)
+        from utils.client_store import open_db
+        conn = open_db()
+        clients = conn.execute("SELECT code, name FROM clients ORDER BY code").fetchall()
+        conn.close()
+        if clients:
+            print("  Available clients:")
+            for c in clients:
+                print(f"    {c[0]:<20} {c[1]}")
+            print()
+    except Exception:
+        clients = []
+
     print("  Entry")
-    print("  [1]  Test entry      —  synthetic patient, safe to re-run")
-    print("  [2]  Full entry      —  all 7 Allied Medical patients")
+    print("  [1]  Test entry      —  synthetic patient (--client test)")
+    print("  [2]  Full entry      —  select client below")
     print()
     print("  Utilities  (DMEWorks must be open, target screen loaded)")
     print("  [3]  Map policy dialog       —  maps Policy Information controls")
@@ -86,14 +103,6 @@ def main() -> None:
     print()
     print("  [0]  Exit")
     print()
-
-    MENU = {
-        "1": "entry_test.py",
-        "2": "entry_all.py",
-        "3": os.path.join("utils", "map_policy_dialog.py"),
-        "4": os.path.join("utils", "map_insurance_company_tabs.py"),
-        "5": os.path.join("utils", "dmeworks_grid_probe.py"),
-    }
 
     while True:
         try:
@@ -105,17 +114,39 @@ def main() -> None:
         if choice == "0":
             print()
             sys.exit(0)
-        elif choice in MENU:
-            script = os.path.join(SCRIPT_DIR, MENU[choice])
+        elif choice in ("1", "2", "3", "4", "5"):
             break
         else:
             print("  Enter 0-5.")
+
+    extra_args = []
+    if choice == "1":
+        script = os.path.join(SCRIPT_DIR, "entry_test.py")
+        extra_args = ["--client", "test"]
+    elif choice == "2":
+        if clients:
+            try:
+                client_code = input("  Client code: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print()
+                sys.exit(0)
+        else:
+            print("  No clients found. Run: python manage_clients.py add-client")
+            sys.exit(1)
+        script = os.path.join(SCRIPT_DIR, "entry_all.py")
+        extra_args = ["--client", client_code]
+    elif choice == "3":
+        script = os.path.join(SCRIPT_DIR, "utils", "map_policy_dialog.py")
+    elif choice == "4":
+        script = os.path.join(SCRIPT_DIR, "utils", "map_insurance_company_tabs.py")
+    elif choice == "5":
+        script = os.path.join(SCRIPT_DIR, "utils", "dmeworks_grid_probe.py")
 
     print()
     print(f"  Launching {os.path.relpath(script, SCRIPT_DIR)}...")
     print("=" * 60)
     print()
-    subprocess.run([sys.executable, script])
+    subprocess.run([sys.executable, script] + extra_args)
 
 
 if __name__ == "__main__":

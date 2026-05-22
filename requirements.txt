@@ -2,3 +2,6 @@ pywinauto>=0.6.8
 pywin32>=305
 comtypes>=1.2.0
 mysql-connector-python>=8.0
+cryptography>=41.0
+keyring>=24.0
+pyinstaller>=6.0

@@ -3,8 +3,8 @@ DMEworks Entry TEST — synthetic test record only.
 Safe to re-run. All data is fake — for automation verification only.
 
 Usage:
-  python entry_test.py            — normal run
-  python entry_test.py --dry-run  — show what would happen, no UI changes
+  python entry_test.py [--client test]
+  python entry_test.py [--client test] --dry-run
 
 Prerequisites: DMEworks open on main screen, all child windows closed.
 """
@@ -18,21 +18,37 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from utils.data_loader import load_doctors, load_patients, load_medicare_map
-from utils.db import fetch_matching_npis, fetch_matching_mbis, fetch_matching_insurance_names
-from utils.logger import get_logger
+from utils import db
+from utils.client_store import ClientStore
+from utils.logger import get_logger, mask_mbi, mask_dob
 
 log = get_logger("dmeworks.test")
 
-DRY_RUN = "--dry-run" in sys.argv
+# ─── ARGS ─────────────────────────────────────────────────────────────────────
+
+def _parse_args():
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--client",  default="test", help="Client code (default: test)")
+    p.add_argument("--dry-run", action="store_true")
+    return p.parse_args()
+
+ARGS = _parse_args()
+DRY_RUN = ARGS.dry_run
+
+# ─── LOAD CLIENT DATA ─────────────────────────────────────────────────────────
+
+_store = ClientStore(ARGS.client)
+MEDICARE_BY_STATE = ClientStore.medicare_map()
+TEST_DOCTOR       = _store.doctors[0]
+TEST_PATIENT      = _store.patients[0]
+_store.close()
+
+db.configure(ARGS.client)
 
 T_SHORT = 0.5
 T_MED   = 1.0
 T_LONG  = 1.8
-
-MEDICARE_BY_STATE = load_medicare_map()
-TEST_DOCTOR       = load_doctors("test_doctors.csv")[0]
-TEST_PATIENT      = load_patients("test_patients.csv")[0]
 
 # ─── CORE UTILITIES ───────────────────────────────────────────────────────────
 
@@ -152,7 +168,6 @@ def click_inner_tab(w, title):
 def set_combo_text(pane, value, main_win=None):
     if not value:
         return
-    # Try binoculars dialog first (more reliable for exact selection)
     if main_win:
         try:
             pane.child_window(auto_id="btnFind", found_index=0).click_input()
@@ -173,7 +188,6 @@ def set_combo_text(pane, value, main_win=None):
                 return
         except Exception as e:
             log.warning("set_combo_text binoculars('%s'): %s", value, e)
-    # Fallback: direct combo
     try:
         combo = pane.child_window(auto_id="cmbInternal", found_index=0)
         combo.click_input(); time.sleep(0.5)
@@ -210,8 +224,7 @@ def ensure_doctor(doc, main_win, a):
     label = f"{doc['first']} {doc['last']} (NPI {doc['npi']})"
     log.info("[1/3] Doctor: %s", label)
 
-    existing = fetch_matching_npis([doc["npi"]])
-    if existing:
+    if db.fetch_matching_npis([doc["npi"]]):
         log.info("  [SKIP]   %s — already in DB", label)
         return
 
@@ -265,8 +278,7 @@ def ensure_doctor(doc, main_win, a):
 def ensure_insurance_company(name, main_win, a, is_medicare=False):
     log.info("[2/3] Insurance: %s", name)
 
-    existing = fetch_matching_insurance_names([name])
-    if existing:
+    if db.fetch_matching_insurance_names([name]):
         tag = "verified" if is_medicare else "already in DB"
         log.info("  [SKIP]   %s — %s", name, tag)
         return
@@ -309,11 +321,10 @@ def ensure_insurance_company(name, main_win, a, is_medicare=False):
 # ─── CUSTOMER ─────────────────────────────────────────────────────────────────
 
 def enter_customer(p, main_win, a):
-    label = f"{p['first']} {p['last']} (MBI {p['mbi']})"
+    label = f"{p['first']} {p['last']} (MBI {mask_mbi(p['mbi'])})"
     log.info("[3/3] Patient: %s", label)
 
-    existing = fetch_matching_mbis([p["mbi"]])
-    if existing:
+    if db.fetch_matching_mbis([p["mbi"]]):
         log.info("  [SKIP]   %s — already in DB", label)
         return
 
@@ -350,11 +361,10 @@ def enter_customer(p, main_win, a):
         set_field(dlg, "txtState",    p["state"])
         set_field(dlg, "txtZip",      p["zip"])
         set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
-        log.info("    General: %s, %s %s | DOB %s", p["city"], p["state"], p["zip"], p["dob"])
+        log.info("    General: %s, %s %s | DOB %s", p["city"], p["state"], p["zip"], mask_dob(p["dob"]))
 
         click_inner_tab(dlg, "Contacts")
         contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
-        # Use address as filter for binoculars — unique even if names collide
         set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
                        TEST_DOCTOR["address1"], main_win)
         log.info("    Doctor: %s (filtered by address)", p["doctor"])
@@ -371,8 +381,8 @@ def enter_customer(p, main_win, a):
                 slot.child_window(auto_id="txtInternal").set_edit_text(code)
                 time.sleep(0.3)
             except Exception as e:
-                log.warning("    ICD slot %d (%s): %s", i, code, e)
-        log.info("    ICD-10: %s", ", ".join(p["icd10"]))
+                log.warning("    ICD slot %d: %s", i, e)
+        log.info("    ICD-10: %d code(s)", len(p["icd10"]))
 
         click_inner_tab(dlg, "Insurance")
         ins_pane  = dlg.child_window(auto_id="tpInsurance", found_index=0)
@@ -392,7 +402,7 @@ def enter_customer(p, main_win, a):
                 pol.child_window(auto_id="btnOK", found_index=0).click_input()
                 time.sleep(T_MED)
                 dismiss_validation(get_app())
-                log.info("    Primary: %s | MBI %s", medicare_name, p["mbi"])
+                log.info("    Primary: %s | MBI %s", medicare_name, mask_mbi(p["mbi"]))
             except Exception as e:
                 log.error("    Policy dialog failed: %s", e)
                 try:
@@ -423,7 +433,7 @@ def main():
         log.info("*** DRY RUN MODE — no changes will be made to DMEworks ***")
 
     log.info("=" * 52)
-    log.info("DMEworks TEST — synthetic test record")
+    log.info("DMEworks TEST — synthetic test record (client: %s)", ARGS.client)
     log.info("=" * 52)
 
     medicare_name = MEDICARE_BY_STATE.get(TEST_PATIENT["state"])
@@ -446,7 +456,7 @@ def main():
     log.info("  Insurance: %s", medicare_name)
     log.info("  Patient  : %s %s | DOB %s | MBI %s",
              TEST_PATIENT["first"], TEST_PATIENT["last"],
-             TEST_PATIENT["dob"], TEST_PATIENT["mbi"])
+             mask_dob(TEST_PATIENT["dob"]), mask_mbi(TEST_PATIENT["mbi"]))
     log.info("=" * 52)
 
 

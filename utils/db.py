@@ -1,24 +1,29 @@
 """
 Targeted DB checks and verification against the DMEworks company schema.
-Credentials loaded from data/db.json. Read-only — never write directly.
+Credentials loaded from clients.enc via ClientStore. Read-only — never write directly.
+Call db.configure(client_code) once at startup before any query function.
 """
-
-import json
-import os
 
 import mysql.connector
 
-_CONFIG_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "db.json"
-)
+_conn_params: dict | None = None
 
-with open(_CONFIG_PATH) as _f:
-    _CONN_PARAMS = json.load(_f)
+
+def configure(client_code: str) -> None:
+    """Load DB credentials for the given client from clients.enc."""
+    global _conn_params
+    from utils.client_store import ClientStore
+    store = ClientStore(client_code)
+    _conn_params = store.db_config
+    store.close()
 
 
 def _connect():
-    return mysql.connector.connect(**_CONN_PARAMS)
+    if _conn_params is None:
+        raise RuntimeError(
+            "db.configure(client_code) must be called before running queries."
+        )
+    return mysql.connector.connect(**_conn_params)
 
 
 # ─── EXISTENCE CHECKS ─────────────────────────────────────────────────────────
@@ -45,7 +50,9 @@ def fetch_matching_insurance_names(names: list[str]) -> set[str]:
     conn = _connect()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT Name FROM tbl_insurancecompany WHERE Name IN ({ph})", names)
+        cur.execute(
+            f"SELECT Name FROM tbl_insurancecompany WHERE Name IN ({ph})", names
+        )
         return {r[0].strip().lower() for r in cur.fetchall()}
     finally:
         conn.close()
@@ -63,7 +70,8 @@ def fetch_matching_mbis(mbis: list[str]) -> set[str]:
     try:
         cur = conn.cursor()
         cur.execute(
-            f"SELECT PolicyNumber FROM tbl_customer_insurance WHERE PolicyNumber IN ({ph})",
+            f"SELECT PolicyNumber FROM tbl_customer_insurance "
+            f"WHERE PolicyNumber IN ({ph})",
             mbis
         )
         return {r[0].strip() for r in cur.fetchall()}

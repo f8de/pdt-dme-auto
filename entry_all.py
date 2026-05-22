@@ -1,35 +1,58 @@
 """
-DMEworks Patient Entry - Allied Medical Health (all 7 patients).
-Safe to re-run. Skips any record that already exists.
+DMEworks Patient Entry.
+Safe to re-run. Skips any record that already exists in the DB.
 
 Usage:
-  python entry_all.py            — normal run
-  python entry_all.py --dry-run  — show what would be created, no UI changes
+  python entry_all.py --client <code>
+  python entry_all.py --client <code> --dry-run
 
 Prerequisites: DMEworks open on main screen, all child windows closed.
+Run 'python manage_clients.py list' to see available client codes.
 """
 
 import os
-import sys
-import time
 import queue
+import sys
 import threading
+import time
 import tkinter as tk
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+
 from pywinauto import Application, keyboard
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from utils.data_loader import load_doctors, load_patients, load_medicare_map, load_insurance_companies
-from utils.db import fetch_matching_npis, fetch_matching_insurance_names, fetch_matching_mbis, verify_patients
-from utils.logger import get_logger
+from utils import db
+from utils.client_store import ClientStore
+from utils.logger import get_logger, mask_dob, mask_mbi
 
 log = get_logger()
 
-DRY_RUN = "--dry-run" in sys.argv
+# ─── ARGS ─────────────────────────────────────────────────────────────────────
+
+def _parse_args():
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--client",  required=True, help="Client code (see manage_clients.py list)")
+    p.add_argument("--dry-run", action="store_true", help="Show what would be created; no UI changes")
+    return p.parse_args()
+
+ARGS = _parse_args()
+DRY_RUN = ARGS.dry_run
+
+# ─── LOAD CLIENT DATA ─────────────────────────────────────────────────────────
+
+_store = ClientStore(ARGS.client)
+MEDICARE_BY_STATE   = ClientStore.medicare_map()
+DOCTORS             = _store.doctors
+PATIENTS            = _store.patients
+INSURANCE_COMPANIES = _store.insurance_companies
+_store.close()
+
+db.configure(ARGS.client)
 
 # ─── STATUS OVERLAY ───────────────────────────────────────────────────────────
 
@@ -74,13 +97,6 @@ T_SHORT = 0.5
 T_MED   = 1.0
 T_LONG  = 1.8
 
-# ─── DATA ─────────────────────────────────────────────────────────────────────
-
-MEDICARE_BY_STATE   = load_medicare_map()
-DOCTORS             = load_doctors()
-PATIENTS            = load_patients()
-INSURANCE_COMPANIES = load_insurance_companies()
-
 # ─── PRE-VALIDATION ───────────────────────────────────────────────────────────
 
 def validate_csv() -> list[str]:
@@ -90,7 +106,7 @@ def validate_csv() -> list[str]:
             errors.append(f"Doctor {doc['last']}, {doc['first']}: missing NPI")
     for co in INSURANCE_COMPANIES:
         if not co.get("name"):
-            errors.append("Insurance companies CSV: row with missing name")
+            errors.append("Insurance companies: row with missing name")
     for p in PATIENTS:
         label = f"Patient {p['last']}, {p['first']}"
         if not p.get("mbi"):
@@ -101,7 +117,7 @@ def validate_csv() -> list[str]:
             try:
                 datetime.strptime(p["dob"], "%m/%d/%Y")
             except ValueError:
-                errors.append(f"{label}: invalid DOB '{p['dob']}' — expected MM/DD/YYYY")
+                errors.append(f"{label}: invalid DOB — expected MM/DD/YYYY")
         state = p.get("state", "")
         if not state:
             errors.append(f"{label}: missing state")
@@ -227,8 +243,6 @@ def click_inner_tab(w, title):
 # ─── COMBO AND DOB ────────────────────────────────────────────────────────────
 
 def set_combo_text(pane, value):
-    """Select a value in a DMEworks cmbInternal combo. Tries select() first,
-    falls back to type + Enter."""
     if not value:
         return
     try:
@@ -416,7 +430,7 @@ def add_insurance_row(pol_dialog, ins_company, ins_type, policy, group=""):
         if dismiss_validation(get_app()):
             log.warning("    Validation on insurance row — check manually")
         else:
-            log.info("    [ins] %s (%s) | policy %s", ins_company, ins_type, policy)
+            log.info("    [ins] %s (%s) | policy %s", ins_company, ins_type, mask_mbi(policy))
     except Exception as e:
         log.error("    add_insurance_row failed: %s", e)
         try:
@@ -454,7 +468,7 @@ def create_customer(p, main_win, a):
         set_field(dlg, "txtState",    p["state"])
         set_field(dlg, "txtZip",      p["zip"])
         set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
-        log.info("    General: %s, %s %s | DOB %s", p["city"], p["state"], p["zip"], p["dob"])
+        log.info("    General: %s, %s %s | DOB %s", p["city"], p["state"], p["zip"], mask_dob(p["dob"]))
 
         click_inner_tab(dlg, "Contacts")
         contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
@@ -474,8 +488,8 @@ def create_customer(p, main_win, a):
                 slot.child_window(auto_id="txtInternal").set_edit_text(code)
                 time.sleep(0.3)
             except Exception as e:
-                log.warning("    ICD slot %d (%s): %s", i, code, e)
-        log.info("    ICD-10: %s", ", ".join(p["icd10"]))
+                log.warning("    ICD slot %d: %s", i, e)
+        log.info("    ICD-10: %d code(s)", len(p["icd10"]))
 
         click_inner_tab(dlg, "Insurance")
         ins_pane  = dlg.child_window(auto_id="tpInsurance", found_index=0)
@@ -529,7 +543,7 @@ def ensure_all_customers(a, main_win, existing_mbis):
     to_skip   = [p for p in PATIENTS if p["mbi"] in existing_mbis]
 
     for p in to_skip:
-        log.info("  [SKIP]   %s %s (MBI %s)", p["first"], p["last"], p["mbi"])
+        log.info("  [SKIP]   %s %s (MBI %s)", p["first"], p["last"], mask_mbi(p["mbi"]))
 
     if not to_create:
         log.info("  All patients already in DB — nothing to do")
@@ -537,7 +551,7 @@ def ensure_all_customers(a, main_win, existing_mbis):
 
     dismiss_popup(a)
     for i, p in enumerate(to_create, 1):
-        label = f"{p['first']} {p['last']} (MBI {p['mbi']})"
+        label = f"{p['first']} {p['last']} (MBI {mask_mbi(p['mbi'])})"
         set_status(f"[3/3] Patient {i}/{len(to_create)}: {p['first']} {p['last']}")
         log.info("")
         log.info("  [CREATE] %s", label)
@@ -559,10 +573,10 @@ def run_verification():
     set_status("Verifying — querying DB...")
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        f_npis    = pool.submit(fetch_matching_npis,            [d["npi"]  for d in DOCTORS])
-        f_names   = pool.submit(fetch_matching_insurance_names, [c["name"] for c in INSURANCE_COMPANIES])
-        f_mbis    = pool.submit(fetch_matching_mbis,            [p["mbi"]  for p in PATIENTS])
-        f_details = pool.submit(verify_patients, PATIENTS)
+        f_npis    = pool.submit(db.fetch_matching_npis,            [d["npi"]  for d in DOCTORS])
+        f_names   = pool.submit(db.fetch_matching_insurance_names, [c["name"] for c in INSURANCE_COMPANIES])
+        f_mbis    = pool.submit(db.fetch_matching_mbis,            [p["mbi"]  for p in PATIENTS])
+        f_details = pool.submit(db.verify_patients, PATIENTS)
         existing_npis   = f_npis.result()
         existing_names  = f_names.result()
         existing_mbis   = f_mbis.result()
@@ -570,7 +584,6 @@ def run_verification():
 
     all_pass = True
 
-    # Doctors
     log.info("")
     log.info("  Doctors (%d):", len(DOCTORS))
     for doc in DOCTORS:
@@ -580,7 +593,6 @@ def run_verification():
             log.error("    [FAIL] %s %s — NPI %s NOT in DB", doc["first"], doc["last"], doc["npi"])
             all_pass = False
 
-    # Insurance
     log.info("")
     log.info("  Insurance Companies (%d):", len(INSURANCE_COMPANIES))
     for co in INSURANCE_COMPANIES:
@@ -590,11 +602,10 @@ def run_verification():
             log.error("    [FAIL] %s — NOT in DB", co["name"])
             all_pass = False
 
-    # Patients — existence + field-level check
     log.info("")
     log.info("  Patients (%d):", len(PATIENTS))
     for p in PATIENTS:
-        label = f"{p['first']} {p['last']} (MBI {p['mbi']})"
+        label = f"{p['first']} {p['last']} (MBI {mask_mbi(p['mbi'])})"
         if p["mbi"] not in existing_mbis:
             log.error("    [FAIL] %s — NOT in DB", label)
             all_pass = False
@@ -602,7 +613,7 @@ def run_verification():
 
         row = patient_details.get(p["mbi"])
         if not row:
-            log.warning("    [WARN] %s — MBI found in insurance table but no joined row returned", label)
+            log.warning("    [WARN] %s — MBI found but no joined row", label)
             all_pass = False
             continue
 
@@ -615,10 +626,10 @@ def run_verification():
         dob_db = row["dob"]
         dob_db_str = dob_db.strftime("%m/%d/%Y") if hasattr(dob_db, "strftime") else str(dob_db)
         if dob_db_str != p["dob"]:
-            issues.append(f"DOB DB='{dob_db_str}' CSV='{p['dob']}'")
+            issues.append(f"DOB mismatch (DB vs record)")
 
         if (row["state"] or "").strip().upper() != p["state"].upper():
-            issues.append(f"State DB='{row['state']}' CSV='{p['state']}'")
+            issues.append(f"State DB='{row['state']}' record='{p['state']}'")
 
         if not row.get("doctor_npi"):
             issues.append("no doctor assigned (Doctor1_ID is NULL)")
@@ -630,7 +641,6 @@ def run_verification():
         else:
             log.info("    [PASS] %s — all fields match, doctor assigned", label)
 
-    # Summary
     log.info("")
     if all_pass:
         log.info("  RESULT: ALL CHECKS PASSED")
@@ -644,43 +654,40 @@ def main():
     if DRY_RUN:
         log.info("*** DRY RUN MODE — no changes will be made to DMEworks ***")
 
-    set_status("Starting — Allied Medical (7 patients)")
+    set_status(f"Starting — {ARGS.client} ({len(PATIENTS)} patients)")
     log.info("=" * 52)
-    log.info("DMEworks Entry — Allied Medical Health (%d patients)", len(PATIENTS))
+    log.info("DMEworks Entry — %s (%d patients)", ARGS.client, len(PATIENTS))
     log.info("=" * 52)
 
-    # 1. Validate CSV data before touching anything
     log.info("")
-    log.info("Pre-validating CSV data...")
+    log.info("Pre-validating data...")
     errors = validate_csv()
     if errors:
-        log.error("CSV validation failed — fix before running:")
+        log.error("Validation failed — fix before running:")
         for err in errors:
             log.error("  %s", err)
         sys.exit(1)
-    log.info("CSV validation passed (%d doctors, %d companies, %d patients)",
+    log.info("Validation passed (%d doctors, %d companies, %d patients)",
              len(DOCTORS), len(INSURANCE_COMPANIES), len(PATIENTS))
 
-    # 2. Fire all DB queries in parallel
     log.info("")
     log.info("Running DB existence checks...")
     set_status("Checking DB...")
     with ThreadPoolExecutor(max_workers=3) as pool:
-        f_npis  = pool.submit(fetch_matching_npis,            [d["npi"]  for d in DOCTORS])
-        f_names = pool.submit(fetch_matching_insurance_names, [c["name"] for c in INSURANCE_COMPANIES])
-        f_mbis  = pool.submit(fetch_matching_mbis,            [p["mbi"]  for p in PATIENTS])
+        f_npis  = pool.submit(db.fetch_matching_npis,            [d["npi"]  for d in DOCTORS])
+        f_names = pool.submit(db.fetch_matching_insurance_names, [c["name"] for c in INSURANCE_COMPANIES])
+        f_mbis  = pool.submit(db.fetch_matching_mbis,            [p["mbi"]  for p in PATIENTS])
         existing_npis  = f_npis.result()
         existing_names = f_names.result()
         existing_mbis  = f_mbis.result()
 
-    need_doctors = sum(1 for d in DOCTORS if d["npi"] not in existing_npis)
-    need_ins     = sum(1 for c in INSURANCE_COMPANIES
-                       if c["name"].lower() not in existing_names and c["type"] != "MEDICARE")
+    need_doctors  = sum(1 for d in DOCTORS if d["npi"] not in existing_npis)
+    need_ins      = sum(1 for c in INSURANCE_COMPANIES
+                        if c["name"].lower() not in existing_names and c["type"] != "MEDICARE")
     need_patients = sum(1 for p in PATIENTS if p["mbi"] not in existing_mbis)
     log.info("Need to create: %d doctor(s), %d insurance company(s), %d patient(s)",
              need_doctors, need_ins, need_patients)
 
-    # 3. Connect to DMEworks once for all UI work
     if not DRY_RUN and (need_doctors or need_ins or need_patients):
         log.info("")
         log.info("Connecting to DMEworks...")
@@ -689,12 +696,10 @@ def main():
     else:
         a, main_win = None, None
 
-    # 4. Entry phases
     ensure_all_doctors(a, main_win, existing_npis)
     ensure_all_insurance_companies(a, main_win, existing_names)
     ensure_all_customers(a, main_win, existing_mbis)
 
-    # 5. Verification pass (skip in dry-run — nothing was entered)
     if not DRY_RUN:
         run_verification()
 
