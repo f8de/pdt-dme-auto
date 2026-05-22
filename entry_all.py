@@ -58,13 +58,11 @@ if not ARGS.client:
 # ─── LOAD CLIENT DATA ─────────────────────────────────────────────────────────
 
 from utils import notion
-from utils.client_store import ClientStore
 from utils.creds import get_notion_token
 
-MEDICARE_BY_STATE = ClientStore.medicare_map()
-
-_token      = get_notion_token()
-_raw        = notion.fetch_work_queue(_token)
+_token            = get_notion_token()
+INSURANCE_BY_STATE = notion.fetch_insurance_map(_token)
+_raw               = notion.fetch_work_queue(_token)
 
 # Unique doctors by NPI
 _seen_npis: set[str] = set()
@@ -82,7 +80,7 @@ PATIENTS: list[dict] = _raw
 _seen_ins: set[str]             = set()
 INSURANCE_COMPANIES: list[dict] = []
 for _p in PATIENTS:
-    _medicare_name = MEDICARE_BY_STATE.get(_p.get("state", ""), "")
+    _medicare_name = INSURANCE_BY_STATE.get(_p.get("state", ""), "")
     if _medicare_name and _medicare_name not in _seen_ins:
         _seen_ins.add(_medicare_name)
         INSURANCE_COMPANIES.append({"name": _medicare_name, "type": "MEDICARE"})
@@ -162,7 +160,7 @@ def validate_csv() -> list[str]:
         state = p.get("state", "")
         if not state:
             errors.append(f"{label}: missing state")
-        elif state not in MEDICARE_BY_STATE:
+        elif state not in INSURANCE_BY_STATE:
             errors.append(f"{label}: state '{state}' has no DMERC mapping")
     return errors
 
@@ -481,7 +479,7 @@ def add_insurance_row(pol_dialog, ins_company, ins_type, policy, group=""):
 
 
 def create_customer(p, main_win, a):
-    medicare_name = MEDICARE_BY_STATE.get(p["state"])
+    medicare_name = INSURANCE_BY_STATE.get(p["state"])
     if not medicare_name:
         raise ValueError(f"No DMERC mapping for state '{p['state']}'")
 

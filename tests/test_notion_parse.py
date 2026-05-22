@@ -309,6 +309,36 @@ def test_fetch_db_config_uses_correct_filter():
     assert any(f.get("property") == "Active" for f in filters)
 
 
+def test_fetch_insurance_map_builds_state_dict():
+    import utils.notion as n
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {
+        "results": [
+            {"properties": {"Name": _title("Medicare Region A DMERC"), "States": _rt("CT, ME, NY"), "Active": {"checkbox": True}}},
+            {"properties": {"Name": _title("Medicare Region B DMERC"), "States": _rt("IL, OH"), "Active": {"checkbox": True}}},
+        ],
+        "has_more": False,
+    }
+    with patch("requests.post", return_value=mock_resp):
+        result = n.fetch_insurance_map("fake-token")
+    assert result["CT"] == "Medicare Region A DMERC"
+    assert result["ME"] == "Medicare Region A DMERC"
+    assert result["NY"] == "Medicare Region A DMERC"
+    assert result["IL"] == "Medicare Region B DMERC"
+    assert result["OH"] == "Medicare Region B DMERC"
+
+
+def test_fetch_insurance_map_returns_empty_when_none_active():
+    import utils.notion as n
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"results": [], "has_more": False}
+    with patch("requests.post", return_value=mock_resp):
+        result = n.fetch_insurance_map("fake-token")
+    assert result == {}
+
+
 def test_fetch_db_config_defaults_port_when_null():
     import utils.notion as n
     page = _sample_client_page()

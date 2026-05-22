@@ -3,10 +3,11 @@ from datetime import datetime
 
 import requests
 
-_BASE            = "https://api.notion.com/v1"
-_PATIENT_DB_ID   = "9c83bd769bb9424bac74d4760a1450f4"
-_CLIENTS_DB_ID   = "9051e0ddc1be47dcb727f236fa599000"
-_NOTION_VERSION  = "2022-06-28"
+_BASE               = "https://api.notion.com/v1"
+_PATIENT_DB_ID      = "9c83bd769bb9424bac74d4760a1450f4"
+_CLIENTS_DB_ID      = "9051e0ddc1be47dcb727f236fa599000"
+_INSURANCE_DB_ID    = "b2844e66f56443b7a9cf5a9d08d5d93c"
+_NOTION_VERSION     = "2022-06-28"
 
 
 def _headers(token: str) -> dict:
@@ -39,6 +40,31 @@ def fetch_work_queue(token: str) -> list[dict]:
             break
         payload["start_cursor"] = data["next_cursor"]
     return patients
+
+
+def fetch_insurance_map(token: str) -> dict[str, str]:
+    """Return {state: company_name} for all active insurance companies."""
+    url     = f"{_BASE}/databases/{_INSURANCE_DB_ID}/query"
+    payload = {"filter": {"property": "Active", "checkbox": {"equals": True}}}
+    state_map: dict[str, str] = {}
+    while True:
+        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        for page in data["results"]:
+            props = page["properties"]
+            title_items = props.get("Name", {}).get("title", [])
+            name        = title_items[0]["plain_text"].strip() if title_items else ""
+            rt_items    = props.get("States", {}).get("rich_text", [])
+            states_raw  = rt_items[0]["plain_text"] if rt_items else ""
+            for state in states_raw.split(","):
+                state = state.strip()
+                if state and name:
+                    state_map[state] = name
+        if not data.get("has_more"):
+            break
+        payload["start_cursor"] = data["next_cursor"]
+    return state_map
 
 
 def fetch_db_config(token: str, client_code: str) -> dict:
