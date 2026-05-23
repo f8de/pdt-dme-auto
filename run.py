@@ -151,10 +151,13 @@ def main() -> None:
 
     print()
 
-    dmeworks_ok = all(ok for name, ok, _ in checks if "DMEWorks" in name)
-    # tkinter missing is a warning not a blocker — only used for status overlay
-    other_ok    = all(ok for name, ok, _ in checks
-                      if "DMEWorks" not in name and "tkinter" not in name)
+    dmeworks_ok  = all(ok for name, ok, _ in checks if "DMEWorks" in name)
+    pywinauto_ok = any(ok for name, ok, _ in checks if "pywinauto" in name)
+    # tkinter + pywinauto warnings only — verify works without them
+    other_ok     = all(ok for name, ok, _ in checks
+                       if "DMEWorks" not in name
+                       and "tkinter"   not in name
+                       and "pywinauto" not in name)
 
     if not other_ok:
         print("  Fix failed checks before running.")
@@ -196,7 +199,7 @@ def main() -> None:
         if choice == "0":
             print()
             sys.exit(0)
-        elif choice in ("1", "2", "4", "5", "6") and not dmeworks_ok:
+        elif choice in ("1", "2", "4", "5", "6") and not (dmeworks_ok and pywinauto_ok):
             print("  That option requires DMEWorks to be running.")
         elif choice in ("1", "2", "3", "4", "5", "6"):
             break

@@ -2,15 +2,72 @@
 # PyInstaller spec — builds dme-auto.exe
 # Run via: python build.py  (from repo root)
 
+import glob
 import os
+import site
+import sys
+from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_data_files
+
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
+
+
+def _find_pywin32_dlls():
+    """Locate pywintypes3XX.dll / pythoncom3XX.dll from pywin32_system32."""
+    binaries = []
+    search_dirs = []
+    try:
+        search_dirs += site.getsitepackages()
+    except Exception:
+        pass
+    try:
+        search_dirs.append(site.getusersitepackages())
+    except Exception:
+        pass
+    # Also check the directory of the running python executable
+    search_dirs.append(os.path.dirname(sys.executable))
+
+    for sp in search_dirs:
+        dll_dir = os.path.join(sp, "pywin32_system32")
+        if os.path.isdir(dll_dir):
+            for dll in glob.glob(os.path.join(dll_dir, "*.dll")):
+                binaries.append((dll, "."))
+        # Some installs put them directly in site-packages/win32/
+        for dll in glob.glob(os.path.join(sp, "win32", "*.dll")):
+            binaries.append((dll, "win32"))
+    return binaries
+
+
+def _safe_collect_all(pkg):
+    try:
+        return collect_all(pkg)
+    except Exception:
+        return [], [], []
+
+
+pw_d, pw_b, pw_h = _safe_collect_all("pywinauto")
+ct_d, ct_b, ct_h = _safe_collect_all("comtypes")
+
+# pywin32: collect_all("win32") fails — win32 isn't a pip dist name.
+# Use collect_submodules + explicit DLLs instead.
+w32_h = (
+    collect_submodules("win32")
+    + collect_submodules("win32com")
+    + collect_submodules("win32comext")
+    + collect_submodules("pywintypes")
+    + collect_submodules("pythoncom")
+)
+try:
+    w32_d = collect_data_files("win32") + collect_data_files("win32com")
+except Exception:
+    w32_d = []
+w32_b = _find_pywin32_dlls()
 
 a = Analysis(
     [os.path.join(ROOT, "run.py")],
     pathex=[ROOT],
-    binaries=[],
-    datas=[],
-    hiddenimports=[
+    binaries=pw_b + ct_b + w32_b,
+    datas=pw_d + ct_d + w32_d,
+    hiddenimports=pw_h + ct_h + w32_h + [
         "mysql.connector",
         "mysql.connector.locales",
         "mysql.connector.locales.eng",
@@ -19,6 +76,15 @@ a = Analysis(
         "urllib3",
         "urllib3.util.retry",
         "charset_normalizer",
+        "win32api",
+        "win32con",
+        "win32gui",
+        "win32process",
+        "win32security",
+        "pywintypes",
+        "pythoncom",
+        "win32com.client",
+        "win32com.shell",
         "entry_all",
         "entry_test",
         "tools.verify_dmeworks",
@@ -31,7 +97,7 @@ a = Analysis(
         "utils.db",
     ],
     hookspath=[],
-    runtime_hooks=[],
+    runtime_hooks=[os.path.join(SPECPATH, "hook_pywin32.py")],
     excludes=[],
     noarchive=False,
 )
