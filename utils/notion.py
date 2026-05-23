@@ -7,6 +7,7 @@ _BASE               = "https://api.notion.com/v1"
 _PATIENT_DB_ID      = "9c83bd769bb9424bac74d4760a1450f4"
 _CLIENTS_DB_ID      = "9051e0ddc1be47dcb727f236fa599000"
 _INSURANCE_DB_ID    = "b2844e66f56443b7a9cf5a9d08d5d93c"
+_DOCTORS_DB_ID      = "8cfb6a87328d463fb3d24b811d0c6c16"
 _NOTION_VERSION     = "2022-06-28"
 
 
@@ -64,6 +65,46 @@ def fetch_entered_patients(token: str) -> list[dict]:
             break
         payload["start_cursor"] = data["next_cursor"]
     return patients
+
+
+def fetch_all_doctors(token: str) -> list[dict]:
+    """Return all doctor records from the Doctors DB."""
+    url     = f"{_BASE}/databases/{_DOCTORS_DB_ID}/query"
+    payload: dict = {}
+    doctors: list[dict] = []
+    while True:
+        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        for page in data["results"]:
+            d = _parse_doctor_page(page)
+            if d:
+                doctors.append(d)
+        if not data.get("has_more"):
+            break
+        payload["start_cursor"] = data["next_cursor"]
+    return doctors
+
+
+def fetch_all_insurance(token: str) -> list[dict]:
+    """Return all insurance company records from the Insurance DB."""
+    url     = f"{_BASE}/databases/{_INSURANCE_DB_ID}/query"
+    payload: dict = {}
+    companies: list[dict] = []
+    while True:
+        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        for page in data["results"]:
+            props = page["properties"]
+            title_items = props.get("Name", {}).get("title", [])
+            name = title_items[0]["plain_text"].strip() if title_items else ""
+            if name:
+                companies.append({"name": name})
+        if not data.get("has_more"):
+            break
+        payload["start_cursor"] = data["next_cursor"]
+    return companies
 
 
 def fetch_insurance_map(token: str) -> dict[str, str]:
@@ -207,6 +248,40 @@ def _parse_patient(token: str, page: dict) -> dict | None:
         "_notion_page_id": page["id"],
         "_notion_url":     page["url"],
         "_doctor":         doc,
+    }
+
+
+def _parse_doctor_page(page: dict) -> dict | None:
+    """Parse a Doctors DB page into a flat dict."""
+    props = page["properties"]
+
+    def rt(key: str) -> str:
+        items = props.get(key, {}).get("rich_text", [])
+        return items[0]["plain_text"].strip() if items else ""
+
+    def title(key: str) -> str:
+        items = props.get(key, {}).get("title", [])
+        return items[0]["plain_text"].strip() if items else ""
+
+    def phone_val(key: str) -> str:
+        return (props.get(key, {}).get("phone_number") or "").strip()
+
+    first = title("First Name") or rt("First Name")
+    last  = rt("Last Name")
+    if not first or not last:
+        return None
+
+    return {
+        "first":    first,
+        "last":     last,
+        "npi":      rt("NPI"),
+        "address1": rt("Address"),
+        "address2": rt("Address 2"),
+        "city":     rt("City"),
+        "state":    rt("State"),
+        "zip":      rt("ZIP"),
+        "phone":    phone_val("Phone"),
+        "_notion_page_id": page["id"],
     }
 
 
