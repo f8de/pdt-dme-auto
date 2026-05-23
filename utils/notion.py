@@ -63,13 +63,25 @@ def fetch_work_queue(token: str) -> list[dict]:
 
 def fetch_entered_patients(token: str) -> list[dict]:
     """Return all patients where Status = 'In DMEworks' (already entered)."""
-    url     = f"{_BASE}/databases/{_PATIENT_DB_ID}/query"
-    payload = {
-        "filter": {
-            "property": "Status",
-            "select": {"equals": "In DMEworks"},
+    return fetch_patients_by_statuses(token, ["In DMEworks"])
+
+
+def fetch_patients_by_statuses(token: str, statuses: list[str] | None = None) -> list[dict]:
+    """Return patients filtered by status list. Pass None to fetch all patients."""
+    url = f"{_BASE}/databases/{_PATIENT_DB_ID}/query"
+    if statuses is None:
+        payload: dict = {}
+    elif len(statuses) == 1:
+        payload = {"filter": {"property": "Status", "select": {"equals": statuses[0]}}}
+    else:
+        payload = {
+            "filter": {
+                "or": [
+                    {"property": "Status", "select": {"equals": s}}
+                    for s in statuses
+                ]
+            }
         }
-    }
     patients: list[dict] = []
     while True:
         data = _request("post", url, _headers(token), json=payload).json()

@@ -30,6 +30,7 @@ from utils.notion import (
     fetch_all_insurance,
     fetch_db_config,
     fetch_entered_patients,
+    fetch_patients_by_statuses,
 )
 
 log = get_logger("verify")
@@ -377,13 +378,43 @@ def main() -> None:
     if args.dry_run:
         print("  [DRY RUN — no changes will be written]")
 
+    # Patient scope selection
+    print()
+    print("  Patient scope:")
+    print("  [1]  In DMEworks only      (default — already entered)")
+    print("  [2]  All patients          (includes pending, errors, all statuses)")
+    print("  [3]  Custom statuses       (comma-separated list)")
+    print()
+    try:
+        scope = input("  > ").strip()
+    except (KeyboardInterrupt, EOFError):
+        print()
+        sys.exit(0)
+
+    if scope == "2":
+        patient_fetch_statuses = None  # fetch all
+        scope_label = "all patients"
+    elif scope == "3":
+        try:
+            raw = input("  Statuses (comma-separated): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            sys.exit(0)
+        patient_fetch_statuses = [s.strip() for s in raw.split(",") if s.strip()]
+        scope_label = f"status in {patient_fetch_statuses}"
+    else:
+        patient_fetch_statuses = ["In DMEworks"]
+        scope_label = "In DMEworks only"
+
+    log.info("patient scope: %s", scope_label)
+
     # Fetch all three Notion DBs in parallel
     print("\nFetching Notion data...")
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
-            f_patients  = pool.submit(fetch_entered_patients, token)
-            f_doctors   = pool.submit(fetch_all_doctors,      token)
-            f_insurance = pool.submit(fetch_all_insurance,    token)
+            f_patients  = pool.submit(fetch_patients_by_statuses, token, patient_fetch_statuses)
+            f_doctors   = pool.submit(fetch_all_doctors,           token)
+            f_insurance = pool.submit(fetch_all_insurance,         token)
             patients    = f_patients.result()
             doctors     = f_doctors.result()
             insurance   = f_insurance.result()
