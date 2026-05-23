@@ -176,21 +176,20 @@ def _launch_dmeworks() -> bool:
     Returns True once the main DMEWorks window is confirmed ready."""
     import time
     try:
-        from utils.creds import get_dmeworks_creds
+        from utils.creds import get_dmeworks_creds, DMEWORKS_EXE
         from pywinauto import Application
     except Exception as _e:
         print(f"  Cannot launch DMEWorks: {_e}")
         return False
 
-    exe_path, username, password = get_dmeworks_creds()
+    username, password = get_dmeworks_creds()
 
-    if not os.path.exists(exe_path):
-        print(f"  DMEWorks not found at: {exe_path}")
-        print("  Set DMEWORKS_EXE_PATH in Doppler if the path differs.")
+    if not os.path.exists(DMEWORKS_EXE):
+        print(f"  DMEWorks not found at: {DMEWORKS_EXE}")
         return False
 
-    print(f"  Starting: {exe_path}")
-    subprocess.Popen([exe_path])
+    print(f"  Starting: {DMEWORKS_EXE}")
+    subprocess.Popen([DMEWORKS_EXE])
 
     # Wait up to 20s for a login or splash window to appear
     print("  Waiting for DMEWorks to start...", end="", flush=True)

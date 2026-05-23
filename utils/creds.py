@@ -141,15 +141,16 @@ def get_db_config(client_code: str) -> dict:
     }
 
 
-def get_dmeworks_creds() -> tuple[str, str, str]:
-    """Return (exe_path, username, password) from Doppler.
+DMEWORKS_EXE = r"C:\Program Files (x86)\DMEWorks\DMEWorks.exe"
 
-    Doppler keys: DMEWORKS_EXE_PATH, DMEWORKS_USERNAME, DMEWORKS_PASSWORD
+
+def get_dmeworks_creds() -> tuple[str, str]:
+    """Return (username, password) from Doppler.
+
+    Doppler keys: DMEWORKS_USERNAME, DMEWORKS_PASSWORD
     """
     s = _get_secrets()
     return (
-        s.get("DMEWORKS_EXE_PATH",
-              r"C:\Program Files (x86)\DMEWorks\DMEWorks.exe").strip(),
         s.get("DMEWORKS_USERNAME", "").strip(),
         s.get("DMEWORKS_PASSWORD", "").strip(),
     )
