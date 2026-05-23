@@ -94,7 +94,7 @@ for _p in PATIENTS:
         _seen_ins.add(_sec_name)
         INSURANCE_COMPANIES.append({"name": _sec_name, "type": "OTHER"})
 
-db.configure(ARGS.client)
+db.configure(ARGS.client, _token)
 
 # ─── STATUS OVERLAY ───────────────────────────────────────────────────────────
 

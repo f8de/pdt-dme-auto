@@ -116,29 +116,18 @@ def get_notion_token() -> str:
     return token
 
 
-def get_db_config(client_code: str) -> dict:
-    """MySQL credentials for client from Doppler.
+MYSQL_HOST = "localhost"
+MYSQL_PORT = 3306
 
-    Keys expected in Doppler:
-      <CLIENT>_MYSQL_HOST, <CLIENT>_MYSQL_PORT (optional, default 3306),
-      <CLIENT>_MYSQL_DB,   <CLIENT>_MYSQL_USER, <CLIENT>_MYSQL_PASSWORD
-    """
-    s      = _get_secrets()
-    prefix = client_code.upper().replace("-", "_").replace(" ", "_")
-    host   = s.get(f"{prefix}_MYSQL_HOST", "").strip()
-    if not host:
-        raise RuntimeError(
-            f"No MySQL credentials found in Doppler for client '{client_code}'.\n"
-            f"Add {prefix}_MYSQL_HOST, {prefix}_MYSQL_USER, {prefix}_MYSQL_PASSWORD, "
-            f"{prefix}_MYSQL_DB to your Doppler config."
-        )
-    return {
-        "host":     host,
-        "port":     int(s.get(f"{prefix}_MYSQL_PORT", "") or "3306"),
-        "database": s.get(f"{prefix}_MYSQL_DB", "").strip(),
-        "user":     s.get(f"{prefix}_MYSQL_USER", "").strip(),
-        "password": s.get(f"{prefix}_MYSQL_PASSWORD", "").strip(),
-    }
+
+def get_mysql_creds() -> tuple[str, str]:
+    """Return (user, password) from Doppler keys DMEWORKS_MYSQL_USER / _PASSWORD."""
+    s = _get_secrets()
+    user     = s.get("DMEWORKS_MYSQL_USER", "").strip()
+    password = s.get("DMEWORKS_MYSQL_PASSWORD", "").strip()
+    if not user:
+        raise RuntimeError("DMEWORKS_MYSQL_USER not found in Doppler config.")
+    return user, password
 
 
 DMEWORKS_EXE = r"C:\Program Files (x86)\DMEWorks\DMEWorks.exe"

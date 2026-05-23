@@ -154,6 +154,32 @@ def fetch_insurance_map(token: str) -> dict[str, str]:
     return state_map
 
 
+def fetch_db_name(token: str, client_code: str) -> str:
+    """Return the MySQL database name for client_code from Notion Clients DB."""
+    url     = f"{_BASE}/databases/{_CLIENTS_DB_ID}/query"
+    payload = {
+        "filter": {
+            "and": [
+                {"property": "Client Code", "title": {"equals": client_code}},
+                {"property": "Active", "checkbox": {"equals": True}},
+            ]
+        }
+    }
+    results = _request("post", url, _headers(token), json=payload).json()["results"]
+    if not results:
+        raise ValueError(
+            f"No active client found for '{client_code}' in Notion Clients DB."
+        )
+    props    = results[0]["properties"]
+    rt_items = props.get("DB Database", {}).get("rich_text", [])
+    db_name  = rt_items[0]["plain_text"].strip() if rt_items else ""
+    if not db_name:
+        raise ValueError(
+            f"Client '{client_code}' has no 'DB Database' value in Notion Clients DB."
+        )
+    return db_name
+
+
 def list_clients(token: str) -> list[dict]:
     """Return all active clients as [{"code": ..., "name": ...}] for menu display."""
     url     = f"{_BASE}/databases/{_CLIENTS_DB_ID}/query"

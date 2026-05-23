@@ -23,7 +23,7 @@ from datetime import datetime
 import mysql.connector
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from utils.creds import get_notion_token, get_db_config
+from utils.creds import get_notion_token
 from utils.logger import get_logger, mask_mbi, mask_dob
 from utils.notion import (
     fetch_all_doctors,
@@ -427,7 +427,8 @@ def main() -> None:
 
     print("\nConnecting to DMEworks DB...")
     try:
-        cfg  = get_db_config(args.client)
+        from utils.db import build_config
+        cfg  = build_config(args.client, token)
         conn = mysql.connector.connect(**cfg)
     except mysql.connector.Error as exc:
         log.error("DB connection failed: %s", exc)
