@@ -48,7 +48,7 @@ def bump_version(part: str) -> str:
         patch += 1
     new_v = f"{major}.{minor}.{patch}"
     VERSION_FILE.write_text(new_v + "\n")
-    print(f"  Version: {v} → {new_v}")
+    print(f"  Version: {v} -> {new_v}")
     return new_v
 
 
