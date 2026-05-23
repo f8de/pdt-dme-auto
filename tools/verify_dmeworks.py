@@ -3,14 +3,21 @@ Verify DMEworks MySQL records against all Notion databases (ground truth).
 Covers: Patients, Doctors, Insurance Companies.
 Shows field-level diffs, prompts confirmation, applies corrections.
 
+Failsafes:
+  --dry-run     Show what would change; make no writes.
+  Ambiguous match detection: skip record if name/DOB matches multiple rows.
+  Full transaction: all corrections commit together or rollback on any error.
+  Row-count assertion: warns if UPDATE affected 0 rows.
+
 Usage:
-    python tools/verify_dmeworks.py --client <CLIENT_CODE>
+    python tools/verify_dmeworks.py --client <CLIENT_CODE> [--dry-run]
     NOTION_TOKEN must be set in the environment.
 """
 import argparse
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import mysql.connector
@@ -63,10 +70,6 @@ def _print_diff(label: str, diffs: list[tuple]) -> None:
 # ── diff helpers ───────────────────────────────────────────────────────────────
 
 def _diff(fields: list[tuple], notion: dict, row: dict) -> list[tuple]:
-    """
-    fields: list of (label, notion_key, sql_key, norm_fn)
-    Returns list of (label, notion_val_display, sql_val_display) for mismatches.
-    """
     diffs = []
     for label, nk, sk, norm in fields:
         n_raw = notion.get(nk, "")
@@ -102,7 +105,7 @@ _FETCH_PATIENT = """
     LEFT JOIN tbl_customer_insurance ci
         ON ci.CustomerID = c.ID AND ci.Rank = 1 AND ci.InactiveDate IS NULL
     WHERE c.FirstName = %s AND c.LastName = %s AND c.DateofBirth = %s
-    LIMIT 1
+    LIMIT 2
 """
 
 _FETCH_PATIENT_BY_NAME = """
@@ -111,23 +114,34 @@ _FETCH_PATIENT_BY_NAME = """
         c.DateofBirth, c.Address1, c.Address2, c.City, c.State, c.Zip, c.Phone
     FROM tbl_customer c
     WHERE c.FirstName = %s AND c.LastName = %s
-    LIMIT 1
+    LIMIT 2
 """
 
 def _verify_patients(cur, patients: list[dict]) -> list[tuple]:
     results = []
     for p in patients:
+        name = f"{p['first']} {p['last']}"
         dob_sql = _notion_dob_to_sql(p["dob"])
-        cur.execute(_FETCH_PATIENT, (p["first"], p["last"], dob_sql))
-        row = cur.fetchone()
 
-        if row is None:
-            # DOB itself may be wrong — try name-only match
+        cur.execute(_FETCH_PATIENT, (p["first"], p["last"], dob_sql))
+        rows = cur.fetchall()
+
+        if len(rows) > 1:
+            print(f"  SKIP {name} — ambiguous: {len(rows)} records match in DMEworks")
+            continue
+
+        if not rows:
+            # DOB itself may be wrong — try name-only fallback
             cur.execute(_FETCH_PATIENT_BY_NAME, (p["first"], p["last"]))
-            row = cur.fetchone()
-            if row is None:
-                print(f"  WARNING: {p['first']} {p['last']} — not found in DMEworks")
+            rows = cur.fetchall()
+            if len(rows) > 1:
+                print(f"  SKIP {name} — ambiguous: {len(rows)} name matches, DOB mismatch")
                 continue
+            if not rows:
+                print(f"  WARNING: {name} — not found in DMEworks")
+                continue
+            # Fetch MBI for name-only match
+            row = rows[0]
             cur.execute(
                 "SELECT PolicyNumber FROM tbl_customer_insurance "
                 "WHERE CustomerID=%s AND Rank=1 AND InactiveDate IS NULL LIMIT 1",
@@ -135,23 +149,24 @@ def _verify_patients(cur, patients: list[dict]) -> list[tuple]:
             )
             mbi_row = cur.fetchone()
             row["MBI"] = mbi_row["PolicyNumber"] if mbi_row else ""
+        else:
+            row = rows[0]
 
         diffs = _diff(_PATIENT_FIELDS, p, row)
 
-        # DOB special-case
-        n_dob = _notion_dob_to_sql(p["dob"])
+        # DOB
         m_dob = row["DateofBirth"].strftime("%Y-%m-%d") if row["DateofBirth"] else ""
-        if n_dob != m_dob:
+        if dob_sql != m_dob:
             diffs.append(("DOB", p["dob"], _sql_date_to_notion(row["DateofBirth"])))
 
-        # MBI special-case
+        # MBI
         if _norm(p["mbi"]) != _norm(row.get("MBI", "")):
             diffs.append(("MBI", _norm(p["mbi"]), _norm(row.get("MBI", ""))))
 
         if diffs:
             results.append(("patient", p, row, diffs))
         else:
-            print(f"  {p['first']} {p['last']} — OK")
+            print(f"  {name} — OK")
     return results
 
 
@@ -171,32 +186,40 @@ _DOCTOR_FIELDS = [
 
 _FETCH_DOCTOR_BY_NPI = """
     SELECT ID, FirstName, LastName, NPI, Address1, Address2, City, State, Zip, Phone
-    FROM tbl_doctor WHERE NPI = %s LIMIT 1
+    FROM tbl_doctor WHERE NPI = %s LIMIT 2
 """
 _FETCH_DOCTOR_BY_NAME = """
     SELECT ID, FirstName, LastName, NPI, Address1, Address2, City, State, Zip, Phone
-    FROM tbl_doctor WHERE FirstName = %s AND LastName = %s LIMIT 1
+    FROM tbl_doctor WHERE FirstName = %s AND LastName = %s LIMIT 2
 """
 
 def _verify_doctors(cur, doctors: list[dict]) -> list[tuple]:
     results = []
     for d in doctors:
-        row = None
+        name = f"Dr. {d['first']} {d['last']}"
+        rows = []
+
         if d["npi"]:
             cur.execute(_FETCH_DOCTOR_BY_NPI, (d["npi"],))
-            row = cur.fetchone()
-        if row is None:
+            rows = cur.fetchall()
+
+        if not rows:
             cur.execute(_FETCH_DOCTOR_BY_NAME, (d["first"], d["last"]))
-            row = cur.fetchone()
-        if row is None:
-            print(f"  WARNING: Dr. {d['first']} {d['last']} — not found in DMEworks")
+            rows = cur.fetchall()
+
+        if len(rows) > 1:
+            print(f"  SKIP {name} — ambiguous: {len(rows)} records match in DMEworks")
+            continue
+        if not rows:
+            print(f"  WARNING: {name} — not found in DMEworks")
             continue
 
+        row   = rows[0]
         diffs = _diff(_DOCTOR_FIELDS, d, row)
         if diffs:
             results.append(("doctor", d, row, diffs))
         else:
-            print(f"  Dr. {d['first']} {d['last']} — OK")
+            print(f"  {name} — OK")
     return results
 
 
@@ -212,7 +235,6 @@ def _verify_insurance(cur, companies: list[dict]) -> list[tuple]:
         cur.execute(_FETCH_INSURANCE_BY_NAME, (c["name"],))
         row = cur.fetchone()
         if row is None:
-            # Report missing — no fields to diff, just flag it
             results.append(("insurance", c, None, [("Name", c["name"], "(not found in DMEworks)")]))
         else:
             print(f"  {c['name']} — OK")
@@ -238,34 +260,45 @@ _UPDATE_DOCTOR = """
     WHERE ID=%s
 """
 
-def _apply(cur, all_diffs: list[tuple]) -> int:
+def _apply(cur, all_diffs: list[tuple], dry_run: bool) -> int:
     count = 0
     for kind, notion, row, diffs in all_diffs:
         if kind == "patient":
             p = notion
-            cur.execute(_UPDATE_CUSTOMER, (
-                p["first"], p["last"], p["mi"], p["suffix"],
-                _notion_dob_to_sql(p["dob"]) or None,
-                p["address1"], p["address2"], p["city"], p["state"], p["zip"], p["phone"],
-                row["ID"],
-            ))
-            if any(f == "MBI" for f, _, _ in diffs):
-                cur.execute(_UPDATE_MBI, (p["mbi"], row["ID"]))
-            print(f"  Updated patient: {p['first']} {p['last']} (ID={row['ID']})")
+            if not dry_run:
+                cur.execute(_UPDATE_CUSTOMER, (
+                    p["first"], p["last"], p["mi"], p["suffix"],
+                    _notion_dob_to_sql(p["dob"]) or None,
+                    p["address1"], p["address2"], p["city"], p["state"], p["zip"], p["phone"],
+                    row["ID"],
+                ))
+                if cur.rowcount == 0:
+                    print(f"  WARNING: UPDATE matched 0 rows for patient ID={row['ID']}")
+                if any(f == "MBI" for f, _, _ in diffs):
+                    cur.execute(_UPDATE_MBI, (p["mbi"], row["ID"]))
+                    if cur.rowcount == 0:
+                        print(f"  WARNING: MBI UPDATE matched 0 rows for CustomerID={row['ID']}")
+            tag = "[DRY RUN] would update" if dry_run else "Updated"
+            print(f"  {tag} patient: {p['first']} {p['last']} (ID={row['ID']})")
             count += 1
 
         elif kind == "doctor":
             d = notion
-            cur.execute(_UPDATE_DOCTOR, (
-                d["first"], d["last"], d["npi"],
-                d["address1"], d["address2"], d["city"], d["state"], d["zip"], d["phone"],
-                row["ID"],
-            ))
-            print(f"  Updated doctor: {d['first']} {d['last']} (ID={row['ID']})")
+            if not dry_run:
+                cur.execute(_UPDATE_DOCTOR, (
+                    d["first"], d["last"], d["npi"],
+                    d["address1"], d["address2"], d["city"], d["state"], d["zip"], d["phone"],
+                    row["ID"],
+                ))
+                if cur.rowcount == 0:
+                    print(f"  WARNING: UPDATE matched 0 rows for doctor ID={row['ID']}")
+            tag = "[DRY RUN] would update" if dry_run else "Updated"
+            print(f"  {tag} doctor: {d['first']} {d['last']} (ID={row['ID']})")
             count += 1
 
         elif kind == "insurance":
             print(f"  SKIP insurance '{notion['name']}' — manual action required in DMEworks")
+
     return count
 
 
@@ -273,17 +306,28 @@ def _apply(cur, all_diffs: list[tuple]) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Verify all Notion DBs against DMEworks")
-    parser.add_argument("--client", required=True, help="Client code (e.g. c02)")
+    parser.add_argument("--client",  required=True, help="Client code (e.g. c02)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show diffs without writing anything to DMEworks")
     args = parser.parse_args()
 
     token = os.environ.get("NOTION_TOKEN", "").strip()
     if not token:
         sys.exit("NOTION_TOKEN not set in environment.")
 
-    print("Fetching Notion data...")
-    patients  = fetch_entered_patients(token)
-    doctors   = fetch_all_doctors(token)
-    insurance = fetch_all_insurance(token)
+    if args.dry_run:
+        print("  [DRY RUN — no changes will be written]")
+
+    # Fetch all three Notion DBs in parallel
+    print("\nFetching Notion data...")
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_patients  = pool.submit(fetch_entered_patients, token)
+        f_doctors   = pool.submit(fetch_all_doctors,      token)
+        f_insurance = pool.submit(fetch_all_insurance,    token)
+        patients    = f_patients.result()
+        doctors     = f_doctors.result()
+        insurance   = f_insurance.result()
+
     print(f"  {len(patients)} patient(s), {len(doctors)} doctor(s), {len(insurance)} insurance company(ies)")
 
     print("\nConnecting to DMEworks DB...")
@@ -320,6 +364,13 @@ def main() -> None:
         _print_diff(label, diffs)
 
     print(f"\n{'='*70}")
+
+    if args.dry_run:
+        print("  Dry run complete. Re-run without --dry-run to apply corrections.")
+        cur.close()
+        conn.close()
+        return
+
     answer = input("Apply corrections to DMEworks? [y/N]: ").strip().lower()
     if answer != "y":
         print("Aborted. No changes made.")
@@ -327,11 +378,19 @@ def main() -> None:
         conn.close()
         return
 
-    count = _apply(cur, all_diffs)
-    conn.commit()
-    print(f"\nDone. {count} record(s) corrected.")
-    cur.close()
-    conn.close()
+    # Apply all corrections in a single transaction — rollback on any error
+    try:
+        count = _apply(cur, all_diffs, dry_run=False)
+        conn.commit()
+        print(f"\nDone. {count} record(s) corrected.")
+    except Exception as exc:
+        conn.rollback()
+        print(f"\nERROR: {exc}")
+        print("Transaction rolled back — no changes were written.")
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 if __name__ == "__main__":

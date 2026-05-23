@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime
 
 import requests
@@ -10,6 +11,8 @@ _INSURANCE_DB_ID    = "b2844e66f56443b7a9cf5a9d08d5d93c"
 _DOCTORS_DB_ID      = "8cfb6a87328d463fb3d24b811d0c6c16"
 _NOTION_VERSION     = "2022-06-28"
 
+_doctor_cache: dict[str, dict] = {}
+
 
 def _headers(token: str) -> dict:
     return {
@@ -17,6 +20,23 @@ def _headers(token: str) -> dict:
         "Notion-Version": _NOTION_VERSION,
         "Content-Type": "application/json",
     }
+
+
+def _request(method: str, url: str, headers: dict, **kwargs) -> requests.Response:
+    """Notion API call with retry on 429 / 5xx (max 3 attempts, exponential backoff)."""
+    for attempt in range(3):
+        resp = getattr(requests, method)(url, headers=headers, timeout=30, **kwargs)
+        if resp.status_code == 429:
+            wait = int(resp.headers.get("Retry-After", 2 ** attempt))
+            time.sleep(wait)
+            continue
+        if resp.status_code >= 500 and attempt < 2:
+            time.sleep(2 ** attempt)
+            continue
+        resp.raise_for_status()
+        return resp
+    resp.raise_for_status()
+    return resp
 
 
 def fetch_work_queue(token: str) -> list[dict]:
@@ -30,9 +50,7 @@ def fetch_work_queue(token: str) -> list[dict]:
     }
     patients: list[dict] = []
     while True:
-        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _request("post", url, _headers(token), json=payload).json()
         for page in data["results"]:
             p = _parse_patient(token, page)
             if p:
@@ -54,9 +72,7 @@ def fetch_entered_patients(token: str) -> list[dict]:
     }
     patients: list[dict] = []
     while True:
-        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _request("post", url, _headers(token), json=payload).json()
         for page in data["results"]:
             p = _parse_patient(token, page)
             if p:
@@ -73,9 +89,7 @@ def fetch_all_doctors(token: str) -> list[dict]:
     payload: dict = {}
     doctors: list[dict] = []
     while True:
-        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _request("post", url, _headers(token), json=payload).json()
         for page in data["results"]:
             d = _parse_doctor_page(page)
             if d:
@@ -92,9 +106,7 @@ def fetch_all_insurance(token: str) -> list[dict]:
     payload: dict = {}
     companies: list[dict] = []
     while True:
-        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _request("post", url, _headers(token), json=payload).json()
         for page in data["results"]:
             props = page["properties"]
             title_items = props.get("Name", {}).get("title", [])
@@ -113,9 +125,7 @@ def fetch_insurance_map(token: str) -> dict[str, str]:
     payload = {"filter": {"property": "Active", "checkbox": {"equals": True}}}
     state_map: dict[str, str] = {}
     while True:
-        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _request("post", url, _headers(token), json=payload).json()
         for page in data["results"]:
             props = page["properties"]
             title_items = props.get("Name", {}).get("title", [])
@@ -143,9 +153,7 @@ def fetch_db_config(token: str, client_code: str) -> dict:
             ]
         }
     }
-    resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
-    resp.raise_for_status()
-    results = resp.json()["results"]
+    results = _request("post", url, _headers(token), json=payload).json()["results"]
     if not results:
         raise ValueError(
             f"No active client config found for '{client_code}' in Notion Clients DB.\n"
@@ -173,8 +181,7 @@ def mark_in_dmeworks(token: str, page_id: str) -> None:
     """Set patient Status = 'In DMEworks' in Notion."""
     url     = f"{_BASE}/pages/{page_id}"
     payload = {"properties": {"Status": {"select": {"name": "In DMEworks"}}}}
-    resp    = requests.patch(url, headers=_headers(token), json=payload, timeout=30)
-    resp.raise_for_status()
+    _request("patch", url, _headers(token), json=payload)
 
 
 # ── internal helpers ──────────────────────────────────────────────────────────
@@ -205,7 +212,7 @@ def _parse_patient(token: str, page: dict) -> dict | None:
     if not first or not last or not mbi:
         return None
 
-    # Resolve linked doctor
+    # Resolve linked doctor (cached by page_id)
     rel = props.get("Doctor", {}).get("relation", [])
     doc = {}
     if rel:
@@ -286,10 +293,11 @@ def _parse_doctor_page(page: dict) -> dict | None:
 
 
 def _fetch_doctor(token: str, page_id: str) -> dict:
-    url  = f"{_BASE}/pages/{page_id}"
-    resp = requests.get(url, headers=_headers(token), timeout=30)
-    resp.raise_for_status()
-    props = resp.json()["properties"]
+    if page_id in _doctor_cache:
+        return _doctor_cache[page_id]
+
+    url   = f"{_BASE}/pages/{page_id}"
+    props = _request("get", url, _headers(token)).json()["properties"]
 
     def rt(key: str) -> str:
         items = props.get(key, {}).get("rich_text", [])
@@ -298,7 +306,7 @@ def _fetch_doctor(token: str, page_id: str) -> dict:
     def phone(key: str) -> str:
         return (props.get(key, {}).get("phone_number") or "").strip()
 
-    return {
+    result = {
         "first":    rt("First Name"),
         "last":     rt("Last Name"),
         "mi":       "",
@@ -311,3 +319,5 @@ def _fetch_doctor(token: str, page_id: str) -> dict:
         "zip":      rt("ZIP"),
         "phone":    phone("Phone"),
     }
+    _doctor_cache[page_id] = result
+    return result
