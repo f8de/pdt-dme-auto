@@ -152,11 +152,14 @@ def main() -> None:
     print()
 
     dmeworks_ok = all(ok for name, ok, _ in checks if "DMEWorks" in name)
-    other_ok    = all(ok for name, ok, _ in checks if "DMEWorks" not in name)
+    # tkinter missing is a warning not a blocker — only used for status overlay
+    other_ok    = all(ok for name, ok, _ in checks
+                      if "DMEWorks" not in name and "tkinter" not in name)
 
     if not other_ok:
         print("  Fix failed checks before running.")
         print()
+        input("  Press Enter to exit...")
         sys.exit(1)
 
     if not dmeworks_ok:
