@@ -38,28 +38,42 @@ _install_crash_handler()
 # directly in-process instead of trying to exec a .py file that doesn't exist.
 
 if _FROZEN and len(sys.argv) > 1 and sys.argv[1] == "--dispatch":
-    mode     = sys.argv[2]
-    sys.argv = [sys.argv[0]] + sys.argv[3:]   # strip --dispatch <mode>
+    try:
+        mode     = sys.argv[2]
+        sys.argv = [sys.argv[0]] + sys.argv[3:]   # strip --dispatch <mode>
 
-    if mode == "entry":
-        import entry_all
-        entry_all.run()
-    elif mode == "entry_test":
-        import entry_test
-        entry_test.run()
-    elif mode == "verify":
-        from tools.verify_dmeworks import main
-        main()
-    elif mode == "map_policy":
-        from tools.map_policy_dialog import main
-        main()
-    elif mode == "map_insurance":
-        from tools.map_insurance_company_tabs import main
-        main()
-    elif mode == "grid_probe":
-        from tools.dmeworks_grid_probe import main
-        main()
-
+        if mode == "entry":
+            import entry_all
+            entry_all.run()
+        elif mode == "entry_test":
+            import entry_test
+            entry_test.run()
+        elif mode == "verify":
+            from tools.verify_dmeworks import main
+            main()
+        elif mode == "map_policy":
+            from tools.map_policy_dialog import main
+            main()
+        elif mode == "map_insurance":
+            from tools.map_insurance_company_tabs import main
+            main()
+        elif mode == "grid_probe":
+            from tools.dmeworks_grid_probe import main
+            main()
+    except SystemExit:
+        raise
+    except Exception:
+        import traceback
+        _exe_dir = os.path.dirname(sys.executable)
+        _crash   = os.path.join(_exe_dir, "crash.log")
+        _tb      = traceback.format_exc()
+        try:
+            with open(_crash, "w", encoding="utf-8") as _f:
+                _f.write(_tb)
+        except Exception:
+            pass
+        print(_tb)
+        input("\nPress Enter to exit...")
     sys.exit(0)
 
 
@@ -217,4 +231,22 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:
+        import traceback
+        _exe_dir = os.path.dirname(sys.executable) if _FROZEN else SCRIPT_DIR
+        _crash   = os.path.join(_exe_dir, "crash.log")
+        _tb      = traceback.format_exc()
+        try:
+            with open(_crash, "w", encoding="utf-8") as _f:
+                _f.write(_tb)
+        except Exception:
+            pass
+        print("\n" + "=" * 60)
+        print("  CRASH — see crash.log next to the EXE for details")
+        print("=" * 60)
+        print(_tb)
+        input("\nPress Enter to exit...")
