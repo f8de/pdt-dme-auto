@@ -26,7 +26,10 @@ def _install_crash_handler() -> None:
         with open(_crash, "w", encoding="utf-8") as f:
             traceback.print_exception(exc_type, exc_val, exc_tb, file=f)
         print(f"\nUnexpected error — details written to: {_crash}")
-        input("Press Enter to exit...")
+        try:
+            input("Press Enter to exit...")
+        except (EOFError, KeyboardInterrupt):
+            pass
 
     sys.excepthook = _handler
 
@@ -73,7 +76,10 @@ if _FROZEN and len(sys.argv) > 1 and sys.argv[1] == "--dispatch":
         except Exception:
             pass
         print(_tb)
-        input("\nPress Enter to exit...")
+        try:
+            input("\nPress Enter to exit...")
+        except (EOFError, KeyboardInterrupt):
+            pass
     sys.exit(0)
 
 
@@ -112,8 +118,8 @@ def check_prereqs() -> list[tuple[str, bool, str]]:
         import pywinauto
         results.append(("pywinauto", True, pywinauto.__version__))
         pywinauto_ok = True
-    except ImportError:
-        results.append(("pywinauto", False, "not installed  ->  pip install pywinauto"))
+    except Exception as _e:
+        results.append(("pywinauto", False, f"failed: {type(_e).__name__}: {_e}"))
 
     try:
         import tkinter  # noqa: F401
@@ -162,7 +168,10 @@ def main() -> None:
     if not other_ok:
         print("  Fix failed checks before running.")
         print()
-        input("  Press Enter to exit...")
+        try:
+            input("  Press Enter to exit...")
+        except (EOFError, KeyboardInterrupt):
+            pass
         sys.exit(1)
 
     if not dmeworks_ok:
@@ -255,4 +264,7 @@ if __name__ == "__main__":
         print("  CRASH — see crash.log next to the EXE for details")
         print("=" * 60)
         print(_tb)
-        input("\nPress Enter to exit...")
+        try:
+            input("\nPress Enter to exit...")
+        except (EOFError, KeyboardInterrupt):
+            pass

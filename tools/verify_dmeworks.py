@@ -487,7 +487,10 @@ def main() -> None:
         conn.close()
         return
 
-    answer = input("Apply corrections to DMEworks? [y/N]: ").strip().lower()
+    try:
+        answer = input("Apply corrections to DMEworks? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = "n"
     if answer != "y":
         print("Aborted. No changes made.")
         log.info("user aborted — no changes made")

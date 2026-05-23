@@ -62,7 +62,10 @@ def _ensure_doppler_token() -> str:
         print("  First-time setup: Doppler service token not found.")
         print("  Doppler dashboard > dme-auto > dev > Access > Service Tokens > Generate")
         print()
-        token = getpass.getpass("  Doppler service token: ").strip()
+        try:
+            token = getpass.getpass("  Doppler service token: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raise RuntimeError("No token entered (no terminal). Aborting.")
         if not token:
             raise RuntimeError("No token entered. Aborting.")
         _save_enc(token)
