@@ -121,9 +121,11 @@ _FETCH_PATIENT_BY_NAME = """
     LIMIT 2
 """
 
-def _verify_patients(cur, patients: list[dict]) -> list[tuple]:
+def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
     results = []
+    stats = {"checked": 0, "ok": 0, "diffs": 0, "skipped": 0, "not_found": 0}
     for p in patients:
+        stats["checked"] += 1
         name = f"{p['first']} {p['last']}"
         dob_sql = _notion_dob_to_sql(p["dob"])
 
@@ -134,6 +136,7 @@ def _verify_patients(cur, patients: list[dict]) -> list[tuple]:
             msg = f"SKIP patient {name} — ambiguous: {len(rows)} records match in DMEworks"
             print(f"  {msg}")
             log.warning(msg)
+            stats["skipped"] += 1
             continue
 
         if not rows:
@@ -143,11 +146,13 @@ def _verify_patients(cur, patients: list[dict]) -> list[tuple]:
                 msg = f"SKIP patient {name} — ambiguous: {len(rows)} name matches, DOB mismatch"
                 print(f"  {msg}")
                 log.warning(msg)
+                stats["skipped"] += 1
                 continue
             if not rows:
                 msg = f"patient {name} — not found in DMEworks"
                 print(f"  WARNING: {msg}")
                 log.warning(msg)
+                stats["not_found"] += 1
                 continue
             row = rows[0]
             cur.execute(
@@ -174,11 +179,13 @@ def _verify_patients(cur, patients: list[dict]) -> list[tuple]:
         if diffs:
             log.info("patient %s (ID=%s) — %d field(s) differ: %s",
                      name, row["ID"], len(diffs), [f for f, _, _ in diffs])
+            stats["diffs"] += 1
             results.append(("patient", p, row, diffs))
         else:
             print(f"  {name} — OK")
             log.debug("patient %s (ID=%s) — OK", name, row["ID"])
-    return results
+            stats["ok"] += 1
+    return results, stats
 
 
 # ── DOCTORS ────────────────────────────────────────────────────────────────────
@@ -204,9 +211,11 @@ _FETCH_DOCTOR_BY_NAME = """
     FROM tbl_doctor WHERE FirstName = %s AND LastName = %s LIMIT 2
 """
 
-def _verify_doctors(cur, doctors: list[dict]) -> list[tuple]:
+def _verify_doctors(cur, doctors: list[dict]) -> tuple[list[tuple], dict]:
     results = []
+    stats = {"checked": 0, "ok": 0, "diffs": 0, "skipped": 0, "not_found": 0}
     for d in doctors:
+        stats["checked"] += 1
         name = f"Dr. {d['first']} {d['last']}"
         rows = []
 
@@ -222,11 +231,13 @@ def _verify_doctors(cur, doctors: list[dict]) -> list[tuple]:
             msg = f"SKIP doctor {name} — ambiguous: {len(rows)} records match in DMEworks"
             print(f"  {msg}")
             log.warning(msg)
+            stats["skipped"] += 1
             continue
         if not rows:
             msg = f"doctor {name} — not found in DMEworks"
             print(f"  WARNING: {msg}")
             log.warning(msg)
+            stats["not_found"] += 1
             continue
 
         row   = rows[0]
@@ -234,11 +245,13 @@ def _verify_doctors(cur, doctors: list[dict]) -> list[tuple]:
         if diffs:
             log.info("doctor %s (ID=%s) — %d field(s) differ: %s",
                      name, row["ID"], len(diffs), [f for f, _, _ in diffs])
+            stats["diffs"] += 1
             results.append(("doctor", d, row, diffs))
         else:
             print(f"  {name} — OK")
             log.debug("doctor %s (ID=%s) — OK", name, row["ID"])
-    return results
+            stats["ok"] += 1
+    return results, stats
 
 
 # ── INSURANCE COMPANIES ────────────────────────────────────────────────────────
@@ -247,18 +260,22 @@ _FETCH_INSURANCE_BY_NAME = """
     SELECT ID, Name FROM tbl_insurancecompany WHERE Name = %s LIMIT 1
 """
 
-def _verify_insurance(cur, companies: list[dict]) -> list[tuple]:
+def _verify_insurance(cur, companies: list[dict]) -> tuple[list[tuple], dict]:
     results = []
+    stats = {"checked": 0, "ok": 0, "diffs": 0, "skipped": 0, "not_found": 0}
     for c in companies:
+        stats["checked"] += 1
         cur.execute(_FETCH_INSURANCE_BY_NAME, (c["name"],))
         row = cur.fetchone()
         if row is None:
             log.warning("insurance '%s' — not found in DMEworks (manual action required)", c["name"])
+            stats["not_found"] += 1
             results.append(("insurance", c, None, [("Name", c["name"], "(not found in DMEworks)")]))
         else:
             print(f"  {c['name']} — OK")
             log.debug("insurance '%s' — OK", c["name"])
-    return results
+            stats["ok"] += 1
+    return results, stats
 
 
 # ── APPLY CORRECTIONS ──────────────────────────────────────────────────────────
@@ -362,36 +379,58 @@ def main() -> None:
 
     # Fetch all three Notion DBs in parallel
     print("\nFetching Notion data...")
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        f_patients  = pool.submit(fetch_entered_patients, token)
-        f_doctors   = pool.submit(fetch_all_doctors,      token)
-        f_insurance = pool.submit(fetch_all_insurance,    token)
-        patients    = f_patients.result()
-        doctors     = f_doctors.result()
-        insurance   = f_insurance.result()
+    try:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_patients  = pool.submit(fetch_entered_patients, token)
+            f_doctors   = pool.submit(fetch_all_doctors,      token)
+            f_insurance = pool.submit(fetch_all_insurance,    token)
+            patients    = f_patients.result()
+            doctors     = f_doctors.result()
+            insurance   = f_insurance.result()
+    except Exception as exc:
+        log.error("Notion fetch failed: %s", exc, exc_info=True)
+        sys.exit(f"Notion fetch failed: {exc}")
 
     print(f"  {len(patients)} patient(s), {len(doctors)} doctor(s), {len(insurance)} insurance company(ies)")
     log.info("fetched from Notion: %d patients, %d doctors, %d insurance companies",
              len(patients), len(doctors), len(insurance))
 
     print("\nConnecting to DMEworks DB...")
-    cfg  = fetch_db_config(token, args.client)
-    conn = mysql.connector.connect(**cfg)
-    cur  = conn.cursor(dictionary=True)
+    try:
+        cfg  = fetch_db_config(token, args.client)
+        conn = mysql.connector.connect(**cfg)
+    except mysql.connector.Error as exc:
+        log.error("DB connection failed: %s", exc)
+        sys.exit(f"DB connection failed: {exc}")
+    except Exception as exc:
+        log.error("Failed to load DB config: %s", exc, exc_info=True)
+        sys.exit(f"Failed to load DB config: {exc}")
+
+    cur = conn.cursor(dictionary=True)
 
     all_diffs: list[tuple] = []
 
     _print_section("PATIENTS")
-    all_diffs += _verify_patients(cur, patients)
+    patient_diffs, patient_stats = _verify_patients(cur, patients)
+    all_diffs += patient_diffs
 
     _print_section("DOCTORS")
-    all_diffs += _verify_doctors(cur, doctors)
+    doctor_diffs, doctor_stats = _verify_doctors(cur, doctors)
+    all_diffs += doctor_diffs
 
     _print_section("INSURANCE COMPANIES")
-    all_diffs += _verify_insurance(cur, insurance)
+    insurance_diffs, insurance_stats = _verify_insurance(cur, insurance)
+    all_diffs += insurance_diffs
+
+    _print_section("RUN SUMMARY")
+    for label, s in [("Patients", patient_stats), ("Doctors", doctor_stats), ("Insurance", insurance_stats)]:
+        print(f"  {label:<12}  {s['checked']} checked  |  {s['ok']} OK  |  "
+              f"{s['diffs']} diff(s)  |  {s['skipped']} skipped  |  {s['not_found']} not found")
+    log.info("run summary — patients: %s | doctors: %s | insurance: %s",
+             patient_stats, doctor_stats, insurance_stats)
 
     if not all_diffs:
-        print("\n\nAll records match. No corrections needed.")
+        print("\n  All records match. No corrections needed.")
         log.info("verify complete — all records match, no corrections needed")
         cur.close()
         conn.close()
