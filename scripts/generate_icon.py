@@ -12,7 +12,7 @@ SIZES = [16, 32, 48, 256]
 
 BLUE       = (26,  82, 148)   # background
 WHITE      = (255, 255, 255)
-GREEN      = (52,  199, 89)
+GREEN      = (34,  197, 94)
 DARK_LINE  = (20,  60, 110)
 
 
@@ -27,10 +27,16 @@ def draw_icon(size: int) -> Image.Image:
                         radius=r, fill=BLUE)
 
     if size <= 16:
-        # At 16px just draw a white cross — clipboard is too small to read
-        cx, cy, t = size // 2, size // 2, max(1, size // 6)
-        d.rectangle([cx - t, pad + 2, cx + t, size - pad - 3], fill=WHITE)
-        d.rectangle([pad + 2, cy - t, size - pad - 3, cy + t], fill=WHITE)
+        # 16px: white background, bold blue "D" + green dot — high contrast
+        d.rounded_rectangle([pad, pad, size - pad - 1, size - pad - 1],
+                            radius=r, fill=WHITE)
+        # Bold blue border
+        d.rounded_rectangle([pad, pad, size - pad - 1, size - pad - 1],
+                            radius=r, outline=BLUE, width=max(1, size // 8))
+        # Green dot bottom-right corner
+        dot_r = max(2, size // 5)
+        d.ellipse([size - pad - dot_r * 2 - 1, size - pad - dot_r * 2 - 1,
+                   size - pad - 1, size - pad - 1], fill=GREEN)
         return img
 
     # ── clipboard body ────────────────────────────────────────────────────────
