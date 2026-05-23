@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec — builds dmeworks-entry.exe
+# PyInstaller spec — builds dme-auto.exe
 # Run via: python build.py  (from repo root)
 
 import os
@@ -34,7 +34,7 @@ exe = EXE(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name="dmeworks-entry",
+    name="dme-auto",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

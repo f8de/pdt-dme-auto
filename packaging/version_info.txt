@@ -9,10 +9,10 @@ VSVersionInfo(
     StringFileInfo([
       StringTable('040904B0', [
         StringStruct('CompanyName',      'PDT'),
-        StringStruct('FileDescription',  'DMEworks Entry Automation'),
+        StringStruct('FileDescription',  'DME Auto'),
         StringStruct('FileVersion',      '0.1.3'),
-        StringStruct('InternalName',     'dmeworks-entry'),
-        StringStruct('ProductName',      'DMEworks Entry'),
+        StringStruct('InternalName',     'dme-auto'),
+        StringStruct('ProductName',      'DME Auto'),
         StringStruct('ProductVersion',   '0.1.3'),
       ])
     ]),

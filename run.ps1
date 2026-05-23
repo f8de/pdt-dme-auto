@@ -1,6 +1,6 @@
 Set-Location -Path $PSScriptRoot
 
-$exe = Join-Path $PSScriptRoot "dmeworks-entry.exe"
+$exe = Join-Path $PSScriptRoot "dme-auto.exe"
 if (Test-Path $exe) {
     & $exe @args
 } else {

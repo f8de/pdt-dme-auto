@@ -1,5 +1,5 @@
 """
-Build script — EXE, versioned deployment package.
+Build script — EXE, deployment package.
 
 Usage:
   python build.py                     Build with current VERSION
@@ -9,15 +9,15 @@ Usage:
   python build.py --no-package        Build EXE but skip deploy packaging
 
 Output:
-  dist/dmeworks-entry.exe             Raw PyInstaller output
-  deploy/dmeworks-v{version}/         Deployment-ready folder
-    dmeworks-entry.exe
+  dist/dme-auto.exe                   Raw PyInstaller output
+  deploy/                             Deployment-ready folder (overwritten each build)
+    dme-auto.exe
     run.ps1
+    run.bat
     DEPLOY.md
 """
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
@@ -28,7 +28,7 @@ VERSION_FILE     = ROOT / "VERSION"
 DEPLOY_DIR       = ROOT / "deploy"
 SPEC_FILE        = ROOT / "packaging" / "dmeworks.spec"
 VERSION_INFO_OUT = ROOT / "packaging" / "version_info.txt"
-EXE_OUT          = ROOT / "dist" / "dmeworks-entry.exe"
+EXE_OUT          = ROOT / "dist" / "dme-auto.exe"
 
 
 # ─── VERSION ──────────────────────────────────────────────────────────────────
@@ -68,10 +68,10 @@ VSVersionInfo(
     StringFileInfo([
       StringTable('040904B0', [
         StringStruct('CompanyName',      'PDT'),
-        StringStruct('FileDescription',  'DMEworks Entry Automation'),
+        StringStruct('FileDescription',  'DME Auto'),
         StringStruct('FileVersion',      '{version}'),
-        StringStruct('InternalName',     'dmeworks-entry'),
-        StringStruct('ProductName',      'DMEworks Entry'),
+        StringStruct('InternalName',     'dme-auto'),
+        StringStruct('ProductName',      'DME Auto'),
         StringStruct('ProductVersion',   '{version}'),
       ])
     ]),
@@ -81,7 +81,7 @@ VSVersionInfo(
 """, encoding="utf-8")
 
 
-def build_exe(version: str):
+def build_exe(version: str) -> None:
     write_version_info(version)
     print("\n[1/2] Building EXE via PyInstaller...")
     result = subprocess.run(
@@ -96,58 +96,54 @@ def build_exe(version: str):
     print(f"      {EXE_OUT.name}  ({size_mb:.1f} MB)")
 
 
-def package(version: str) -> Path:
-    print(f"\n[2/2] Packaging deploy/dmeworks-v{version}/...")
-    out_dir = DEPLOY_DIR / f"dmeworks-v{version}"
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
+def package(version: str) -> None:
+    print(f"\n[2/2] Packaging deploy/...")
+    if DEPLOY_DIR.exists():
+        shutil.rmtree(DEPLOY_DIR)
+    DEPLOY_DIR.mkdir(parents=True)
 
-    shutil.copy2(EXE_OUT, out_dir / "dmeworks-entry.exe")
-    shutil.copy2(ROOT / "run.ps1", out_dir / "run.ps1")
+    shutil.copy2(EXE_OUT,          DEPLOY_DIR / "dme-auto.exe")
+    shutil.copy2(ROOT / "run.ps1", DEPLOY_DIR / "run.ps1")
+    shutil.copy2(ROOT / "run.bat", DEPLOY_DIR / "run.bat")
 
-    (out_dir / "DEPLOY.md").write_text(f"""\
-# DMEworks Entry v{version}
+    (DEPLOY_DIR / "DEPLOY.md").write_text(f"""\
+# DME Auto v{version}
 
 ## First-time setup on target machine
 
-1. Copy this entire folder to the machine (e.g. `C:\\DMEworks-Entry\\`)
+1. Copy this folder to the machine (e.g. `C:\\dme-auto\\`)
 2. Generate a Doppler service token:
-   - Doppler dashboard > dme-auto project > dev config > Access > Service Tokens > Generate
-3. Run setup to encrypt and store the token (DPAPI — tied to this user + machine):
-   ```powershell
-   .\\run.ps1 --setup
-   ```
-   Paste the Doppler service token when prompted. One-time only.
+   - Doppler dashboard > dme-auto > dev > Access > Service Tokens > Generate
+3. Double-click `dme-auto.exe` (or run `run.bat`)
+   - First run auto-detects no token and prompts for setup
+   - Paste the Doppler service token — DPAPI encrypted, this user/machine only
 4. Add client config to Notion Clients database (host, user, password, db)
 5. DMEworks must be open before running entry
 
 ## Run
 
-```powershell
-.\\run.ps1
-```
+Double-click `dme-auto.exe` or `run.bat`.
 
 ## Files
 
-| File                 | Purpose                                         |
-|----------------------|-------------------------------------------------|
-| `dmeworks-entry.exe` | Standalone executable — no Python required      |
-| `run.ps1`            | Launcher — decrypts Doppler token, fetches NOTION_TOKEN at runtime |
+| File          | Purpose                                              |
+|---------------|------------------------------------------------------|
+| `dme-auto.exe`| Standalone app — no Python required. v{version} embedded. |
+| `run.bat`     | Double-click launcher                                |
+| `run.ps1`     | PowerShell launcher (dev/scripting)                  |
 
 ## Version
 
 `{version}`
 """, encoding="utf-8")
 
-    print(f"      {out_dir}")
-    return out_dir
+    print(f"      {DEPLOY_DIR}")
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
-def main():
-    parser = argparse.ArgumentParser(description="DMEworks build script")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="DME Auto build script")
     parser.add_argument("--bump", choices=["major", "minor", "patch"],
                         help="Bump version before building")
     parser.add_argument("--no-package", action="store_true",
@@ -156,19 +152,19 @@ def main():
 
     version = bump_version(args.bump) if args.bump else read_version()
 
-    print("=" * 52)
-    print(f"  DMEworks Build  v{version}")
-    print("=" * 52)
+    print("=" * 50)
+    print(f"  DME Auto  v{version}")
+    print("=" * 50)
 
     build_exe(version)
 
     if not args.no_package:
-        out_dir = package(version)
-        print(f"\n  Deploy package: {out_dir.relative_to(ROOT)}")
+        package(version)
+        print(f"\n  Deploy package: deploy/")
 
-    print("\n" + "=" * 52)
+    print("\n" + "=" * 50)
     print(f"  Build complete  v{version}")
-    print("=" * 52)
+    print("=" * 50)
 
 
 if __name__ == "__main__":
