@@ -23,12 +23,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT         = Path(__file__).resolve().parent
-VERSION_FILE = ROOT / "VERSION"
-DEPLOY_DIR   = ROOT / "deploy"
-ASSETS_DIR   = ROOT / "assets"
-SPEC_FILE    = ROOT / "packaging" / "dmeworks.spec"
-EXE_OUT      = ROOT / "dist" / "dmeworks-entry.exe"
+ROOT             = Path(__file__).resolve().parent
+VERSION_FILE     = ROOT / "VERSION"
+DEPLOY_DIR       = ROOT / "deploy"
+SPEC_FILE        = ROOT / "packaging" / "dmeworks.spec"
+VERSION_INFO_OUT = ROOT / "packaging" / "version_info.txt"
+EXE_OUT          = ROOT / "dist" / "dmeworks-entry.exe"
 
 
 # ─── VERSION ──────────────────────────────────────────────────────────────────
@@ -54,7 +54,35 @@ def bump_version(part: str) -> str:
 
 # ─── BUILD STEPS ──────────────────────────────────────────────────────────────
 
-def build_exe():
+def write_version_info(version: str) -> None:
+    major, minor, patch = (int(x) for x in version.split("."))
+    VERSION_INFO_OUT.write_text(f"""\
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=({major}, {minor}, {patch}, 0),
+    prodvers=({major}, {minor}, {patch}, 0),
+    mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('040904B0', [
+        StringStruct('CompanyName',      'PDT'),
+        StringStruct('FileDescription',  'DMEworks Entry Automation'),
+        StringStruct('FileVersion',      '{version}'),
+        StringStruct('InternalName',     'dmeworks-entry'),
+        StringStruct('ProductName',      'DMEworks Entry'),
+        StringStruct('ProductVersion',   '{version}'),
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [0x0409, 1200])])
+  ]
+)
+""", encoding="utf-8")
+
+
+def build_exe(version: str):
+    write_version_info(version)
     print("\n[1/2] Building EXE via PyInstaller...")
     result = subprocess.run(
         [sys.executable, "-m", "PyInstaller", "--noconfirm", str(SPEC_FILE)],
@@ -132,7 +160,7 @@ def main():
     print(f"  DMEworks Build  v{version}")
     print("=" * 52)
 
-    build_exe()
+    build_exe(version)
 
     if not args.no_package:
         out_dir = package(version)

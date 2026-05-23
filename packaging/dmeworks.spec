@@ -42,4 +42,5 @@ exe = EXE(
     upx_exclude=[],
     console=True,
     icon=None,
+    version=os.path.join(SPECPATH, "version_info.txt"),
 )

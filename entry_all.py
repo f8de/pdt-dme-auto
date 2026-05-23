@@ -37,8 +37,8 @@ def _parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--client",  default=None, help="Client code")
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--setup",   action="store_true",
-                   help="Store Notion token and DB credentials (run once on each machine)")
+    p.add_argument("--setup", action="store_true",
+                   help="Re-run Doppler token setup (overwrites saved token)")
     return p.parse_args()
 
 ARGS    = _parse_args()
@@ -47,12 +47,16 @@ DRY_RUN = ARGS.dry_run
 # ─── SETUP MODE ───────────────────────────────────────────────────────────────
 
 if ARGS.setup:
-    from entry_setup import run_setup
-    run_setup()
+    from utils.creds import _ENC_FILE, _ensure_doppler_token
+    import os
+    if os.path.exists(_ENC_FILE):
+        os.remove(_ENC_FILE)
+    _ensure_doppler_token()
+    print("  Setup complete. Run without --setup to launch the app.")
     sys.exit(0)
 
 if not ARGS.client:
-    print("error: --client is required (or use --setup for first-time credential setup)")
+    print("error: --client is required")
     sys.exit(1)
 
 # ─── LOAD CLIENT DATA ─────────────────────────────────────────────────────────
