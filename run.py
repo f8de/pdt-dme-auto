@@ -121,12 +121,6 @@ def check_prereqs() -> list[tuple[str, bool, str]]:
     except Exception as _e:
         results.append(("pywinauto", False, f"failed: {type(_e).__name__}: {_e}"))
 
-    try:
-        import tkinter  # noqa: F401
-        results.append(("tkinter", True, "ok"))
-    except ImportError:
-        results.append(("tkinter", False, "not available in this Python install"))
-
     if pywinauto_ok:
         try:
             from pywinauto import Application
@@ -284,10 +278,9 @@ def main() -> None:
 
     dmeworks_ok  = all(ok for name, ok, _ in checks if "DMEWorks" in name)
     pywinauto_ok = any(ok for name, ok, _ in checks if "pywinauto" in name)
-    # tkinter + pywinauto warnings only — verify works without them
+    # pywinauto warning only — verify works without it
     other_ok     = all(ok for name, ok, _ in checks
-                       if "DMEWorks" not in name
-                       and "tkinter"   not in name
+                       if "DMEWorks"  not in name
                        and "pywinauto" not in name)
 
     if not other_ok:

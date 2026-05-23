@@ -23,7 +23,6 @@ def _find_pywin32_dlls():
         search_dirs.append(site.getusersitepackages())
     except Exception:
         pass
-    # Also check the directory of the running python executable
     search_dirs.append(os.path.dirname(sys.executable))
 
     for sp in search_dirs:
@@ -31,7 +30,6 @@ def _find_pywin32_dlls():
         if os.path.isdir(dll_dir):
             for dll in glob.glob(os.path.join(dll_dir, "*.dll")):
                 binaries.append((dll, "."))
-        # Some installs put them directly in site-packages/win32/
         for dll in glob.glob(os.path.join(sp, "win32", "*.dll")):
             binaries.append((dll, "win32"))
     return binaries
@@ -47,12 +45,11 @@ def _safe_collect_all(pkg):
 pw_d, pw_b, pw_h = _safe_collect_all("pywinauto")
 ct_d, ct_b, ct_h = _safe_collect_all("comtypes")
 
-# pywin32: collect_all("win32") fails — win32 isn't a pip dist name.
-# Use collect_submodules + explicit DLLs instead.
+# pywin32: not a standard pip dist — collect submodules + explicit DLLs.
+# Exclude win32comext (shell/taskscheduler) — not used by pywinauto UIA.
 w32_h = (
     collect_submodules("win32")
     + collect_submodules("win32com")
-    + collect_submodules("win32comext")
     + collect_submodules("pywintypes")
     + collect_submodules("pythoncom")
 )
@@ -98,7 +95,23 @@ a = Analysis(
     ],
     hookspath=[],
     runtime_hooks=[os.path.join(SPECPATH, "hook_pywin32.py")],
-    excludes=[],
+    excludes=[
+        # tkinter — replaced with SetConsoleTitleW, saves ~7 MB of tcl/tk data
+        "tkinter", "_tkinter",
+        # unused win32 extensions
+        "win32comext",
+        # dev/test tools never needed at runtime
+        "unittest", "doctest", "pdb", "pydoc", "py_compile",
+        "profile", "cProfile", "timeit", "trace",
+        "lib2to3", "distutils",
+        # unused stdlib
+        "sqlite3", "_sqlite3",
+        "ftplib", "imaplib", "smtplib", "telnetlib", "nntplib", "poplib",
+        "socketserver", "xmlrpc",
+        "turtle", "turtledemo", "idlelib",
+        "http.server",
+        "test",
+    ],
     noarchive=False,
 )
 

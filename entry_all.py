@@ -10,12 +10,11 @@ Prerequisites: DMEworks open on main screen, all child windows closed.
 Run 'python manage_clients.py list' to see available client codes.
 """
 
+import ctypes
 import os
-import queue
 import sys
 import threading
 import time
-import tkinter as tk
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
@@ -98,42 +97,13 @@ db.configure(ARGS.client, _token)
 
 # ─── STATUS OVERLAY ───────────────────────────────────────────────────────────
 
-_status_q: queue.Queue = queue.Queue()
 _notion_retry: list[str] = []
 
-
-def _overlay_thread() -> None:
-    root = tk.Tk()
-    root.title("DMEworks")
-    root.attributes("-topmost", True)
-    root.attributes("-alpha", 0.93)
-    root.geometry("340x64+10+10")
-    root.configure(bg="#1a1a2e")
-    root.resizable(False, False)
-
-    lbl = tk.Label(root, text="Initializing...", bg="#1a1a2e", fg="#e0e0ff",
-                   font=("Consolas", 10, "bold"), wraplength=318,
-                   justify="left", anchor="w")
-    lbl.pack(expand=True, fill="both", padx=10, pady=10)
-
-    def _poll() -> None:
-        try:
-            while True:
-                msg = _status_q.get_nowait()
-                if msg is None:
-                    root.destroy()
-                    return
-                lbl.config(text=msg)
-        except queue.Empty:
-            pass
-        root.after(150, _poll)
-
-    root.after(150, _poll)
-    root.mainloop()
+_set_title = ctypes.windll.kernel32.SetConsoleTitleW
 
 
 def set_status(msg: str) -> None:
-    _status_q.put(msg)
+    _set_title(f"DME Auto — {msg}")
 
 
 T_SHORT = 0.5
@@ -779,13 +749,7 @@ def main():
 
 
 def run():
-    _t = threading.Thread(target=_overlay_thread, daemon=True)
-    _t.start()
-    try:
-        main()
-    finally:
-        _status_q.put(None)
-        _t.join(timeout=3)
+    main()
 
 
 if __name__ == "__main__":
