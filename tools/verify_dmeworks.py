@@ -17,19 +17,22 @@ import argparse
 import os
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import mysql.connector
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils.creds import get_notion_token
+from utils.logger import get_logger, mask_mbi, mask_dob
 from utils.notion import (
     fetch_all_doctors,
     fetch_all_insurance,
     fetch_db_config,
     fetch_entered_patients,
 )
+
+log = get_logger("verify")
 
 # ── normalizers ────────────────────────────────────────────────────────────────
 
@@ -128,20 +131,24 @@ def _verify_patients(cur, patients: list[dict]) -> list[tuple]:
         rows = cur.fetchall()
 
         if len(rows) > 1:
-            print(f"  SKIP {name} — ambiguous: {len(rows)} records match in DMEworks")
+            msg = f"SKIP patient {name} — ambiguous: {len(rows)} records match in DMEworks"
+            print(f"  {msg}")
+            log.warning(msg)
             continue
 
         if not rows:
-            # DOB itself may be wrong — try name-only fallback
             cur.execute(_FETCH_PATIENT_BY_NAME, (p["first"], p["last"]))
             rows = cur.fetchall()
             if len(rows) > 1:
-                print(f"  SKIP {name} — ambiguous: {len(rows)} name matches, DOB mismatch")
+                msg = f"SKIP patient {name} — ambiguous: {len(rows)} name matches, DOB mismatch"
+                print(f"  {msg}")
+                log.warning(msg)
                 continue
             if not rows:
-                print(f"  WARNING: {name} — not found in DMEworks")
+                msg = f"patient {name} — not found in DMEworks"
+                print(f"  WARNING: {msg}")
+                log.warning(msg)
                 continue
-            # Fetch MBI for name-only match
             row = rows[0]
             cur.execute(
                 "SELECT PolicyNumber FROM tbl_customer_insurance "
@@ -165,9 +172,12 @@ def _verify_patients(cur, patients: list[dict]) -> list[tuple]:
             diffs.append(("MBI", _norm(p["mbi"]), _norm(row.get("MBI", ""))))
 
         if diffs:
+            log.info("patient %s (ID=%s) — %d field(s) differ: %s",
+                     name, row["ID"], len(diffs), [f for f, _, _ in diffs])
             results.append(("patient", p, row, diffs))
         else:
             print(f"  {name} — OK")
+            log.debug("patient %s (ID=%s) — OK", name, row["ID"])
     return results
 
 
@@ -209,18 +219,25 @@ def _verify_doctors(cur, doctors: list[dict]) -> list[tuple]:
             rows = cur.fetchall()
 
         if len(rows) > 1:
-            print(f"  SKIP {name} — ambiguous: {len(rows)} records match in DMEworks")
+            msg = f"SKIP doctor {name} — ambiguous: {len(rows)} records match in DMEworks"
+            print(f"  {msg}")
+            log.warning(msg)
             continue
         if not rows:
-            print(f"  WARNING: {name} — not found in DMEworks")
+            msg = f"doctor {name} — not found in DMEworks"
+            print(f"  WARNING: {msg}")
+            log.warning(msg)
             continue
 
         row   = rows[0]
         diffs = _diff(_DOCTOR_FIELDS, d, row)
         if diffs:
+            log.info("doctor %s (ID=%s) — %d field(s) differ: %s",
+                     name, row["ID"], len(diffs), [f for f, _, _ in diffs])
             results.append(("doctor", d, row, diffs))
         else:
             print(f"  {name} — OK")
+            log.debug("doctor %s (ID=%s) — OK", name, row["ID"])
     return results
 
 
@@ -236,9 +253,11 @@ def _verify_insurance(cur, companies: list[dict]) -> list[tuple]:
         cur.execute(_FETCH_INSURANCE_BY_NAME, (c["name"],))
         row = cur.fetchone()
         if row is None:
+            log.warning("insurance '%s' — not found in DMEworks (manual action required)", c["name"])
             results.append(("insurance", c, None, [("Name", c["name"], "(not found in DMEworks)")]))
         else:
             print(f"  {c['name']} — OK")
+            log.debug("insurance '%s' — OK", c["name"])
     return results
 
 
@@ -274,11 +293,20 @@ def _apply(cur, all_diffs: list[tuple], dry_run: bool) -> int:
                     row["ID"],
                 ))
                 if cur.rowcount == 0:
-                    print(f"  WARNING: UPDATE matched 0 rows for patient ID={row['ID']}")
+                    msg = f"UPDATE matched 0 rows for patient ID={row['ID']}"
+                    print(f"  WARNING: {msg}")
+                    log.warning(msg)
                 if any(f == "MBI" for f, _, _ in diffs):
                     cur.execute(_UPDATE_MBI, (p["mbi"], row["ID"]))
                     if cur.rowcount == 0:
-                        print(f"  WARNING: MBI UPDATE matched 0 rows for CustomerID={row['ID']}")
+                        msg = f"MBI UPDATE matched 0 rows for CustomerID={row['ID']}"
+                        print(f"  WARNING: {msg}")
+                        log.warning(msg)
+                log.info("updated patient %s %s (ID=%s) fields: %s",
+                         p["first"], p["last"], row["ID"], [f for f, _, _ in diffs])
+            else:
+                log.info("[DRY RUN] would update patient %s %s (ID=%s) fields: %s",
+                         p["first"], p["last"], row["ID"], [f for f, _, _ in diffs])
             tag = "[DRY RUN] would update" if dry_run else "Updated"
             print(f"  {tag} patient: {p['first']} {p['last']} (ID={row['ID']})")
             count += 1
@@ -292,13 +320,22 @@ def _apply(cur, all_diffs: list[tuple], dry_run: bool) -> int:
                     row["ID"],
                 ))
                 if cur.rowcount == 0:
-                    print(f"  WARNING: UPDATE matched 0 rows for doctor ID={row['ID']}")
+                    msg = f"UPDATE matched 0 rows for doctor ID={row['ID']}"
+                    print(f"  WARNING: {msg}")
+                    log.warning(msg)
+                log.info("updated doctor %s %s (ID=%s) fields: %s",
+                         d["first"], d["last"], row["ID"], [f for f, _, _ in diffs])
+            else:
+                log.info("[DRY RUN] would update doctor %s %s (ID=%s) fields: %s",
+                         d["first"], d["last"], row["ID"], [f for f, _, _ in diffs])
             tag = "[DRY RUN] would update" if dry_run else "Updated"
             print(f"  {tag} doctor: {d['first']} {d['last']} (ID={row['ID']})")
             count += 1
 
         elif kind == "insurance":
-            print(f"  SKIP insurance '{notion['name']}' — manual action required in DMEworks")
+            msg = f"SKIP insurance '{notion['name']}' — manual action required in DMEworks"
+            print(f"  {msg}")
+            log.warning(msg)
 
     return count
 
@@ -315,7 +352,10 @@ def main() -> None:
     try:
         token = get_notion_token()
     except RuntimeError as exc:
+        log.error("Failed to get Notion token: %s", exc)
         sys.exit(str(exc))
+
+    log.info("verify start — client=%s dry_run=%s", args.client, args.dry_run)
 
     if args.dry_run:
         print("  [DRY RUN — no changes will be written]")
@@ -331,6 +371,8 @@ def main() -> None:
         insurance   = f_insurance.result()
 
     print(f"  {len(patients)} patient(s), {len(doctors)} doctor(s), {len(insurance)} insurance company(ies)")
+    log.info("fetched from Notion: %d patients, %d doctors, %d insurance companies",
+             len(patients), len(doctors), len(insurance))
 
     print("\nConnecting to DMEworks DB...")
     cfg  = fetch_db_config(token, args.client)
@@ -350,6 +392,7 @@ def main() -> None:
 
     if not all_diffs:
         print("\n\nAll records match. No corrections needed.")
+        log.info("verify complete — all records match, no corrections needed")
         cur.close()
         conn.close()
         return
@@ -369,6 +412,7 @@ def main() -> None:
 
     if args.dry_run:
         print("  Dry run complete. Re-run without --dry-run to apply corrections.")
+        log.info("dry run complete — %d discrepancy(ies) found, no changes written", len(all_diffs))
         cur.close()
         conn.close()
         return
@@ -376,6 +420,7 @@ def main() -> None:
     answer = input("Apply corrections to DMEworks? [y/N]: ").strip().lower()
     if answer != "y":
         print("Aborted. No changes made.")
+        log.info("user aborted — no changes made")
         cur.close()
         conn.close()
         return
@@ -385,10 +430,12 @@ def main() -> None:
         count = _apply(cur, all_diffs, dry_run=False)
         conn.commit()
         print(f"\nDone. {count} record(s) corrected.")
+        log.info("verify complete — %d record(s) corrected and committed", count)
     except Exception as exc:
         conn.rollback()
         print(f"\nERROR: {exc}")
         print("Transaction rolled back — no changes were written.")
+        log.error("transaction rolled back due to error: %s", exc, exc_info=True)
         raise
     finally:
         cur.close()
