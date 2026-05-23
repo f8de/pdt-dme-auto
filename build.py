@@ -84,32 +84,33 @@ def package(version: str) -> Path:
 ## First-time setup on target machine
 
 1. Copy this entire folder to the machine (e.g. `C:\\DMEworks-Entry\\`)
-2. Store Notion token in PowerShell SecretManagement vault:
+2. Generate a Doppler service token:
+   - Doppler dashboard > dme-auto project > dev config > Access > Service Tokens > Generate
+3. Run setup to encrypt and store the token (DPAPI — tied to this user + machine):
+   ```powershell
+   .\\run.ps1 --setup
    ```
-   Set-Secret -Vault local -Name notion-token -Secret 'ntn_YOUR_TOKEN'
-   ```
-3. Add client config to Notion Clients database (host, user, password, db)
-4. DMEworks must be open before running
+   Paste the Doppler service token when prompted. One-time only.
+4. Add client config to Notion Clients database (host, user, password, db)
+5. DMEworks must be open before running entry
 
 ## Run
 
 ```powershell
-.\\run.ps1 --client ALLIED
-.\\run.ps1 --client ALLIED --dry-run
-.\\run.ps1 --setup
+.\\run.ps1
 ```
 
 ## Files
 
-| File                 | Purpose                                    |
-|----------------------|--------------------------------------------|
-| `dmeworks-entry.exe` | Standalone executable — no Python required |
-| `run.ps1`            | Launcher — injects Notion token from vault |
+| File                 | Purpose                                         |
+|----------------------|-------------------------------------------------|
+| `dmeworks-entry.exe` | Standalone executable — no Python required      |
+| `run.ps1`            | Launcher — decrypts Doppler token, fetches NOTION_TOKEN at runtime |
 
 ## Version
 
 `{version}`
-""")
+""", encoding="utf-8")
 
     print(f"      {out_dir}")
     return out_dir
