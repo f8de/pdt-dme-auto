@@ -1,7 +1,7 @@
 import importlib
+from unittest.mock import patch
 
 import pytest
-import requests
 import requests_mock as req_mock
 
 
@@ -25,15 +25,7 @@ def test_strips_whitespace(monkeypatch):
     assert fn() == "ntn_abc123"
 
 
-def test_raises_when_neither_set(monkeypatch):
-    monkeypatch.delenv("NOTION_TOKEN", raising=False)
-    monkeypatch.delenv("DOPPLER_TOKEN", raising=False)
-    fn = _reload()
-    with pytest.raises(RuntimeError, match="DOPPLER_TOKEN"):
-        fn()
-
-
-def test_fetches_from_doppler(monkeypatch):
+def test_doppler_env_fetches_notion_token(monkeypatch):
     monkeypatch.delenv("NOTION_TOKEN", raising=False)
     monkeypatch.setenv("DOPPLER_TOKEN", "dp.st.dev.abc")
     fn = _reload()
@@ -69,3 +61,30 @@ def test_doppler_missing_key_raises(monkeypatch):
         )
         with pytest.raises(RuntimeError, match="NOTION_TOKEN not found in Doppler"):
             fn()
+
+
+def test_no_tokens_prompts_setup(monkeypatch):
+    monkeypatch.delenv("NOTION_TOKEN", raising=False)
+    monkeypatch.delenv("DOPPLER_TOKEN", raising=False)
+    fn = _reload()
+    # Simulate: no .enc file, user enters empty token → aborts
+    with patch("os.path.exists", return_value=False), \
+         patch("getpass.getpass", return_value=""):
+        with pytest.raises(RuntimeError, match="No token entered"):
+            fn()
+
+
+def test_no_tokens_setup_then_fetch(monkeypatch):
+    monkeypatch.delenv("NOTION_TOKEN", raising=False)
+    monkeypatch.delenv("DOPPLER_TOKEN", raising=False)
+    fn = _reload()
+    with patch("os.path.exists", return_value=False), \
+         patch("getpass.getpass", return_value="dp.st.dev.test"), \
+         patch("utils.creds._save_enc"), \
+         patch("utils.creds._load_enc", return_value="dp.st.dev.test"):
+        with req_mock.Mocker() as m:
+            m.get(
+                "https://api.doppler.com/v3/configs/config/secrets/download",
+                json={"NOTION_TOKEN": "ntn_after_setup"},
+            )
+            assert fn() == "ntn_after_setup"
