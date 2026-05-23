@@ -41,6 +41,6 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     console=True,
-    icon=None,
+    icon=os.path.join(SPECPATH, "icon.ico"),
     version=os.path.join(SPECPATH, "version_info.txt"),
 )
