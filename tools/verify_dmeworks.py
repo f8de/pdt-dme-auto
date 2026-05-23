@@ -68,19 +68,20 @@ def _print_diff(label: str, diffs: list[tuple]) -> None:
     print(f"\n  {label}")
     print(f"  {'Field':<14}  {'Notion (correct)':<32}  DMEworks (stored)")
     print(f"  {'-'*14}  {'-'*32}  {'-'*32}")
-    for field, n_val, m_val in diffs:
-        print(f"  {field:<14}  {n_val:<32}  {m_val}")
+    for field, _sql_col, _sql_val, n_display, m_display in diffs:
+        print(f"  {field:<14}  {n_display:<32}  {m_display}")
 
 
 # ── diff helpers ───────────────────────────────────────────────────────────────
 
 def _diff(fields: list[tuple], notion: dict, row: dict) -> list[tuple]:
+    # Each entry: (label, sql_col, sql_val, notion_display, db_display)
     diffs = []
     for label, nk, sk, norm in fields:
         n_raw = notion.get(nk, "")
         m_raw = row.get(sk, "")
         if norm(n_raw) != norm(m_raw):
-            diffs.append((label, _norm(n_raw), _norm(m_raw)))
+            diffs.append((label, sk, n_raw, _norm(n_raw), _norm(m_raw)))
     return diffs
 
 
@@ -168,18 +169,20 @@ def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
 
         diffs = _diff(_PATIENT_FIELDS, p, row)
 
-        # DOB
+        # DOB — sql_val is YYYY-MM-DD for the UPDATE; display Notion value as MM/DD/YYYY
         m_dob = row["DateofBirth"].strftime("%Y-%m-%d") if row["DateofBirth"] else ""
         if dob_sql != m_dob:
-            diffs.append(("DOB", p["dob"], _sql_date_to_notion(row["DateofBirth"])))
+            diffs.append(("DOB", "DateofBirth", dob_sql or None,
+                          p["dob"], _sql_date_to_notion(row["DateofBirth"])))
 
-        # MBI
+        # MBI — sql_col=None signals separate table (tbl_customer_insurance)
         if _norm(p["mbi"]) != _norm(row.get("MBI", "")):
-            diffs.append(("MBI", _norm(p["mbi"]), _norm(row.get("MBI", ""))))
+            diffs.append(("MBI", None, _norm(p["mbi"]),
+                          _norm(p["mbi"]), _norm(row.get("MBI", ""))))
 
         if diffs:
             log.info("patient %s (ID=%s) — %d field(s) differ: %s",
-                     name, row["ID"], len(diffs), [f for f, _, _ in diffs])
+                     name, row["ID"], len(diffs), [f for f, *_ in diffs])
             stats["diffs"] += 1
             results.append(("patient", p, row, diffs))
         else:
@@ -245,7 +248,7 @@ def _verify_doctors(cur, doctors: list[dict]) -> tuple[list[tuple], dict]:
         diffs = _diff(_DOCTOR_FIELDS, d, row)
         if diffs:
             log.info("doctor %s (ID=%s) — %d field(s) differ: %s",
-                     name, row["ID"], len(diffs), [f for f, _, _ in diffs])
+                     name, row["ID"], len(diffs), [f for f, *_ in diffs])
             stats["diffs"] += 1
             results.append(("doctor", d, row, diffs))
         else:
@@ -281,72 +284,69 @@ def _verify_insurance(cur, companies: list[dict]) -> tuple[list[tuple], dict]:
 
 # ── APPLY CORRECTIONS ──────────────────────────────────────────────────────────
 
-_UPDATE_CUSTOMER = """
-    UPDATE tbl_customer
-    SET FirstName=%s, LastName=%s, MiddleName=%s, Suffix=%s, DateofBirth=%s,
-        Address1=%s, Address2=%s, City=%s, State=%s, Zip=%s, Phone=%s
-    WHERE ID=%s
-"""
 _UPDATE_MBI = """
     UPDATE tbl_customer_insurance SET PolicyNumber=%s
     WHERE CustomerID=%s AND Rank=1 AND InactiveDate IS NULL
 """
-_UPDATE_DOCTOR = """
-    UPDATE tbl_doctor
-    SET FirstName=%s, LastName=%s, NPI=%s,
-        Address1=%s, Address2=%s, City=%s, State=%s, Zip=%s, Phone=%s
-    WHERE ID=%s
-"""
+
 
 def _apply(cur, all_diffs: list[tuple], dry_run: bool) -> int:
     count = 0
     for kind, notion, row, diffs in all_diffs:
+        changed_fields = [f for f, *_ in diffs]
+        tag = "[DRY RUN] would update" if dry_run else "Updated"
+
         if kind == "patient":
             p = notion
+            # Split: tbl_customer columns vs MBI (separate table, sql_col=None)
+            cust_cols, cust_vals, update_mbi, new_mbi = [], [], False, None
+            for _label, sql_col, sql_val, _nd, _dd in diffs:
+                if sql_col is None:
+                    update_mbi, new_mbi = True, sql_val
+                else:
+                    cust_cols.append(f"{sql_col}=%s")
+                    cust_vals.append(sql_val)
+
             if not dry_run:
-                cur.execute(_UPDATE_CUSTOMER, (
-                    p["first"], p["last"], p["mi"], p["suffix"],
-                    _notion_dob_to_sql(p["dob"]) or None,
-                    p["address1"], p["address2"], p["city"], p["state"], p["zip"], p["phone"],
-                    row["ID"],
-                ))
-                if cur.rowcount == 0:
-                    msg = f"UPDATE matched 0 rows for patient ID={row['ID']}"
-                    print(f"  WARNING: {msg}")
-                    log.warning(msg)
-                if any(f == "MBI" for f, _, _ in diffs):
-                    cur.execute(_UPDATE_MBI, (p["mbi"], row["ID"]))
+                if cust_cols:
+                    sql = f"UPDATE tbl_customer SET {', '.join(cust_cols)} WHERE ID=%s"
+                    cur.execute(sql, cust_vals + [row["ID"]])
+                    if cur.rowcount == 0:
+                        msg = f"UPDATE matched 0 rows for patient ID={row['ID']}"
+                        print(f"  WARNING: {msg}")
+                        log.warning(msg)
+                if update_mbi:
+                    cur.execute(_UPDATE_MBI, (new_mbi, row["ID"]))
                     if cur.rowcount == 0:
                         msg = f"MBI UPDATE matched 0 rows for CustomerID={row['ID']}"
                         print(f"  WARNING: {msg}")
                         log.warning(msg)
                 log.info("updated patient %s %s (ID=%s) fields: %s",
-                         p["first"], p["last"], row["ID"], [f for f, _, _ in diffs])
+                         p["first"], p["last"], row["ID"], changed_fields)
             else:
                 log.info("[DRY RUN] would update patient %s %s (ID=%s) fields: %s",
-                         p["first"], p["last"], row["ID"], [f for f, _, _ in diffs])
-            tag = "[DRY RUN] would update" if dry_run else "Updated"
+                         p["first"], p["last"], row["ID"], changed_fields)
             print(f"  {tag} patient: {p['first']} {p['last']} (ID={row['ID']})")
             count += 1
 
         elif kind == "doctor":
             d = notion
+            doc_cols = [f"{sql_col}=%s" for _, sql_col, *_ in diffs]
+            doc_vals = [sql_val for _, _sc, sql_val, *_ in diffs]
+
             if not dry_run:
-                cur.execute(_UPDATE_DOCTOR, (
-                    d["first"], d["last"], d["npi"],
-                    d["address1"], d["address2"], d["city"], d["state"], d["zip"], d["phone"],
-                    row["ID"],
-                ))
-                if cur.rowcount == 0:
-                    msg = f"UPDATE matched 0 rows for doctor ID={row['ID']}"
-                    print(f"  WARNING: {msg}")
-                    log.warning(msg)
+                if doc_cols:
+                    sql = f"UPDATE tbl_doctor SET {', '.join(doc_cols)} WHERE ID=%s"
+                    cur.execute(sql, doc_vals + [row["ID"]])
+                    if cur.rowcount == 0:
+                        msg = f"UPDATE matched 0 rows for doctor ID={row['ID']}"
+                        print(f"  WARNING: {msg}")
+                        log.warning(msg)
                 log.info("updated doctor %s %s (ID=%s) fields: %s",
-                         d["first"], d["last"], row["ID"], [f for f, _, _ in diffs])
+                         d["first"], d["last"], row["ID"], changed_fields)
             else:
                 log.info("[DRY RUN] would update doctor %s %s (ID=%s) fields: %s",
-                         d["first"], d["last"], row["ID"], [f for f, _, _ in diffs])
-            tag = "[DRY RUN] would update" if dry_run else "Updated"
+                         d["first"], d["last"], row["ID"], changed_fields)
             print(f"  {tag} doctor: {d['first']} {d['last']} (ID={row['ID']})")
             count += 1
 
@@ -469,7 +469,7 @@ def main() -> None:
 
     # Summary report
     _print_section(f"DISCREPANCIES — {len(all_diffs)} record(s) need correction")
-    for kind, notion, row, diffs in all_diffs:
+    for kind, notion, _row, diffs in all_diffs:
         if kind == "patient":
             label = f"Patient: {notion['first']} {notion['last']}"
         elif kind == "doctor":
