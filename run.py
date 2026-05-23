@@ -68,12 +68,19 @@ def main() -> None:
 
     print()
 
-    if not all_ok:
+    dmeworks_ok = all(ok for name, ok, _ in checks if "DMEWorks" in name)
+    other_ok    = all(ok for name, ok, _ in checks if "DMEWorks" not in name)
+
+    if not other_ok:
         print("  Fix failed checks before running.")
         print()
         sys.exit(1)
 
-    print("  All checks passed.")
+    if not dmeworks_ok:
+        print("  DMEWorks not running — entry options unavailable.")
+        print("  Verification (option 3) is still available.")
+    else:
+        print("  All checks passed.")
     print()
 
     print("  (Client codes are configured in the Notion Clients database)")
@@ -83,10 +90,13 @@ def main() -> None:
     print("  [1]  Test entry      —  synthetic patient (--client test)")
     print("  [2]  Full entry      —  select client below")
     print()
+    print("  Verification")
+    print("  [3]  Verify & correct  —  compare Notion vs DMEworks, fix mismatches")
+    print()
     print("  Utilities  (DMEWorks must be open, target screen loaded)")
-    print("  [3]  Map policy dialog       —  maps Policy Information controls")
-    print("  [4]  Map insurance company   —  maps Insurance Company form controls")
-    print("  [5]  Grid probe              —  probes DataGridView cell reading")
+    print("  [4]  Map policy dialog       —  maps Policy Information controls")
+    print("  [5]  Map insurance company   —  maps Insurance Company form controls")
+    print("  [6]  Grid probe              —  probes DataGridView cell reading")
     print()
     print("  [0]  Exit")
     print()
@@ -101,10 +111,12 @@ def main() -> None:
         if choice == "0":
             print()
             sys.exit(0)
-        elif choice in ("1", "2", "3", "4", "5"):
+        elif choice in ("1", "2", "4", "5", "6") and not dmeworks_ok:
+            print("  That option requires DMEWorks to be running.")
+        elif choice in ("1", "2", "3", "4", "5", "6"):
             break
         else:
-            print("  Enter 0-5.")
+            print("  Enter 0-6.")
 
     extra_args = []
     if choice == "1":
@@ -119,10 +131,18 @@ def main() -> None:
         script = os.path.join(SCRIPT_DIR, "entry_all.py")
         extra_args = ["--client", client_code]
     elif choice == "3":
-        script = os.path.join(SCRIPT_DIR, "tools", "map_policy_dialog.py")
+        try:
+            client_code = input("  Client code: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            sys.exit(0)
+        script = os.path.join(SCRIPT_DIR, "tools", "verify_dmeworks.py")
+        extra_args = ["--client", client_code]
     elif choice == "4":
-        script = os.path.join(SCRIPT_DIR, "tools", "map_insurance_company_tabs.py")
+        script = os.path.join(SCRIPT_DIR, "tools", "map_policy_dialog.py")
     elif choice == "5":
+        script = os.path.join(SCRIPT_DIR, "tools", "map_insurance_company_tabs.py")
+    elif choice == "6":
         script = os.path.join(SCRIPT_DIR, "tools", "dmeworks_grid_probe.py")
 
     print()
