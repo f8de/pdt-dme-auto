@@ -79,7 +79,7 @@ def main() -> None:
     print("  (Client codes are configured in the Notion Clients database)")
     print()
 
-  print("  Entry")
+    print("  Entry")
     print("  [1]  Test entry      —  synthetic patient (--client test)")
     print("  [2]  Full entry      —  select client below")
     print()

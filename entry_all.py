@@ -345,6 +345,7 @@ def create_doctor(doc, main_win, a):
 
         click_inner_tab(w, "Address")
         set_field(w, "txtAddress1", doc["address1"])
+        set_field(w, "txtAddress2", doc["address2"])
         set_field(w, "txtCity",     doc["city"])
         set_field(w, "txtState",    doc["state"])
         set_field(w, "txtZip",      doc["zip"])
@@ -503,6 +504,7 @@ def create_customer(p, main_win, a):
         click_inner_tab(dlg, "General")
         set_dob(dlg, p["dob"])
         set_field(dlg, "txtAddress1", p["address1"])
+        set_field(dlg, "txtAddress2", p["address2"])
         set_field(dlg, "txtCity",     p["city"])
         set_field(dlg, "txtState",    p["state"])
         set_field(dlg, "txtZip",      p["zip"])
