@@ -1,7 +1,7 @@
 """
 Targeted DB checks and verification against the DMEworks company schema.
-Credentials fetched from Notion Clients DB at startup.
-Read-only — never write directly. Call db.configure(client_code, token) once at startup.
+Credentials fetched from Doppler at startup.
+Read-only — never write directly. Call db.configure(client_code) once at startup.
 """
 
 import mysql.connector
@@ -9,11 +9,11 @@ import mysql.connector
 _conn_params: dict | None = None
 
 
-def configure(client_code: str, token: str) -> None:
-    """Fetch DB credentials from Notion Clients DB and store for this session."""
+def configure(client_code: str) -> None:
+    """Fetch DB credentials from Doppler and store for this session."""
     global _conn_params
-    from utils import notion
-    _conn_params = notion.fetch_db_config(token, client_code)
+    from utils.creds import get_db_config
+    _conn_params = get_db_config(client_code)
 
 
 def _connect():

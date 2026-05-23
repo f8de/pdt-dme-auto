@@ -6,6 +6,7 @@ import os
 import requests
 
 _ENC_FILE = os.path.join(os.environ.get("APPDATA", ""), "pdt", "doppler.enc")
+_secrets_cache: dict | None = None
 
 
 # ── DPAPI ──────────────────────────────────────────────────────────────────────
@@ -46,14 +47,18 @@ def _dpapi_decrypt(data: bytes) -> bytes:
 def _save_enc(token: str) -> None:
     encrypted = _dpapi_encrypt(token.encode("utf-16-le"))
     os.makedirs(os.path.dirname(_ENC_FILE), exist_ok=True)
-    with open(_ENC_FILE, "w") as f:
-        f.write(encrypted.hex())
+    with open(_ENC_FILE, "wb") as f:
+        f.write(encrypted)
 
 
 def _load_enc() -> str:
-    with open(_ENC_FILE) as f:
-        ciphertext = bytes.fromhex(f.read().strip())
-    return _dpapi_decrypt(ciphertext).decode("utf-16-le")
+    with open(_ENC_FILE, "rb") as f:
+        raw = f.read()
+    # Try raw bytes first (new format); fall back to hex string (old format)
+    try:
+        return _dpapi_decrypt(raw).decode("utf-16-le")
+    except OSError:
+        return _dpapi_decrypt(bytes.fromhex(raw.decode().strip())).decode("utf-16-le")
 
 
 def _ensure_doppler_token() -> str:
@@ -74,17 +79,20 @@ def _ensure_doppler_token() -> str:
     return _load_enc()
 
 
-# ── public ─────────────────────────────────────────────────────────────────────
+# ── Doppler fetch ──────────────────────────────────────────────────────────────
 
-def get_notion_token() -> str:
-    # Env var takes precedence (CI / dev override)
-    token = os.environ.get("NOTION_TOKEN", "").strip()
-    if token:
-        return token
+def _get_secrets() -> dict:
+    """Fetch all Doppler secrets once per session, cached in memory."""
+    global _secrets_cache
+    if _secrets_cache is not None:
+        return _secrets_cache
 
-    # Doppler service token — from env or DPAPI-encrypted file (auto-setup if missing)
+    # Dev/CI override: NOTION_TOKEN set directly in environment
+    if os.environ.get("NOTION_TOKEN"):
+        _secrets_cache = dict(os.environ)
+        return _secrets_cache
+
     doppler_token = os.environ.get("DOPPLER_TOKEN", "").strip() or _ensure_doppler_token()
-
     try:
         resp = requests.get(
             "https://api.doppler.com/v3/configs/config/secrets/download",
@@ -95,8 +103,53 @@ def get_notion_token() -> str:
         resp.raise_for_status()
     except requests.RequestException as exc:
         raise RuntimeError(f"Doppler fetch failed: {exc}") from exc
+    _secrets_cache = resp.json()
+    return _secrets_cache
 
-    notion_token = resp.json().get("NOTION_TOKEN", "").strip()
-    if not notion_token:
+
+# ── public ─────────────────────────────────────────────────────────────────────
+
+def get_notion_token() -> str:
+    token = _get_secrets().get("NOTION_TOKEN", "").strip()
+    if not token:
         raise RuntimeError("NOTION_TOKEN not found in Doppler config.")
-    return notion_token
+    return token
+
+
+def get_db_config(client_code: str) -> dict:
+    """MySQL credentials for client from Doppler.
+
+    Keys expected in Doppler:
+      <CLIENT>_MYSQL_HOST, <CLIENT>_MYSQL_PORT (optional, default 3306),
+      <CLIENT>_MYSQL_DB,   <CLIENT>_MYSQL_USER, <CLIENT>_MYSQL_PASSWORD
+    """
+    s      = _get_secrets()
+    prefix = client_code.upper().replace("-", "_").replace(" ", "_")
+    host   = s.get(f"{prefix}_MYSQL_HOST", "").strip()
+    if not host:
+        raise RuntimeError(
+            f"No MySQL credentials found in Doppler for client '{client_code}'.\n"
+            f"Add {prefix}_MYSQL_HOST, {prefix}_MYSQL_USER, {prefix}_MYSQL_PASSWORD, "
+            f"{prefix}_MYSQL_DB to your Doppler config."
+        )
+    return {
+        "host":     host,
+        "port":     int(s.get(f"{prefix}_MYSQL_PORT", "") or "3306"),
+        "database": s.get(f"{prefix}_MYSQL_DB", "").strip(),
+        "user":     s.get(f"{prefix}_MYSQL_USER", "").strip(),
+        "password": s.get(f"{prefix}_MYSQL_PASSWORD", "").strip(),
+    }
+
+
+def get_dmeworks_creds() -> tuple[str, str, str]:
+    """Return (exe_path, username, password) from Doppler.
+
+    Doppler keys: DMEWORKS_EXE_PATH, DMEWORKS_USERNAME, DMEWORKS_PASSWORD
+    """
+    s = _get_secrets()
+    return (
+        s.get("DMEWORKS_EXE_PATH",
+              r"C:\Program Files (x86)\DMEWorks\DMEWorks.exe").strip(),
+        s.get("DMEWORKS_USERNAME", "").strip(),
+        s.get("DMEWORKS_PASSWORD", "").strip(),
+    )

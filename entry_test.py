@@ -59,7 +59,7 @@ _token            = get_notion_token()
 INSURANCE_BY_STATE = notion.fetch_insurance_map(_token)
 
 try:
-    db.configure(ARGS.client, _token)
+    db.configure(ARGS.client)
 except Exception as e:
     log.warning("DB config not found for client '%s' — DB checks will be skipped: %s", ARGS.client, e)
     import utils.db as _db_mod

@@ -154,39 +154,25 @@ def fetch_insurance_map(token: str) -> dict[str, str]:
     return state_map
 
 
-def fetch_db_config(token: str, client_code: str) -> dict:
-    """Return MySQL credentials for client_code from Notion Clients DB."""
+def list_clients(token: str) -> list[dict]:
+    """Return all active clients as [{"code": ..., "name": ...}] for menu display."""
     url     = f"{_BASE}/databases/{_CLIENTS_DB_ID}/query"
-    payload = {
-        "filter": {
-            "and": [
-                {"property": "Client Code", "title": {"equals": client_code}},
-                {"property": "Active", "checkbox": {"equals": True}},
-            ]
-        }
-    }
-    results = _request("post", url, _headers(token), json=payload).json()["results"]
-    if not results:
-        raise ValueError(
-            f"No active client config found for '{client_code}' in Notion Clients DB.\n"
-            "Add a row to the Clients database in Notion and check 'Active'."
-        )
-    props = results[0]["properties"]
-
-    def rt(key: str) -> str:
-        items = props.get(key, {}).get("rich_text", [])
-        return items[0]["plain_text"].strip() if items else ""
-
-    def num(key: str) -> int:
-        return int(props.get(key, {}).get("number") or 3306)
-
-    return {
-        "host":     rt("DB Host"),
-        "port":     num("DB Port"),
-        "user":     rt("DB User"),
-        "password": rt("DB Password"),
-        "database": rt("DB Database"),
-    }
+    payload = {"filter": {"property": "Active", "checkbox": {"equals": True}}}
+    clients = []
+    while True:
+        data = _request("post", url, _headers(token), json=payload).json()
+        for page in data["results"]:
+            props = page["properties"]
+            title_items = props.get("Client Code", {}).get("title", [])
+            code        = title_items[0]["plain_text"].strip() if title_items else ""
+            rt_items    = props.get("Name", {}).get("rich_text", [])
+            name        = rt_items[0]["plain_text"].strip() if rt_items else ""
+            if code:
+                clients.append({"code": code, "name": name})
+        if not data.get("has_more"):
+            break
+        payload["start_cursor"] = data["next_cursor"]
+    return sorted(clients, key=lambda c: c["code"])
 
 
 def mark_in_dmeworks(token: str, page_id: str) -> None:

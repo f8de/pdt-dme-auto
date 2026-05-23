@@ -140,6 +140,132 @@ def check_prereqs() -> list[tuple[str, bool, str]]:
     return results
 
 
+# ── client picker ─────────────────────────────────────────────────────────────
+
+def _prompt_client_code() -> str:
+    """Show active clients from Notion, then prompt for a code."""
+    try:
+        from utils.creds import get_notion_token
+        from utils.notion import list_clients
+        print()
+        print("  Loading client list...")
+        token   = get_notion_token()
+        clients = list_clients(token)
+        if clients:
+            print()
+            print(f"  {'Code':<14} Name")
+            print(f"  {'-'*14} {'-'*30}")
+            for c in clients:
+                print(f"  {c['code']:<14} {c['name']}")
+        else:
+            print("  (No active clients found in Notion Clients DB)")
+    except Exception as _e:
+        print(f"  (Could not load client list: {_e})")
+    print()
+    try:
+        return input("  Client code: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(0)
+
+
+# ── dmeworks launcher ──────────────────────────────────────────────────────────
+
+def _launch_dmeworks() -> bool:
+    """Launch DMEWorks exe, auto-login if credentials are configured.
+    Returns True once the main DMEWorks window is confirmed ready."""
+    import time
+    try:
+        from utils.creds import get_dmeworks_creds
+        from pywinauto import Application
+    except Exception as _e:
+        print(f"  Cannot launch DMEWorks: {_e}")
+        return False
+
+    exe_path, username, password = get_dmeworks_creds()
+
+    if not os.path.exists(exe_path):
+        print(f"  DMEWorks not found at: {exe_path}")
+        print("  Set DMEWORKS_EXE_PATH in Doppler if the path differs.")
+        return False
+
+    print(f"  Starting: {exe_path}")
+    subprocess.Popen([exe_path])
+
+    # Wait up to 20s for a login or splash window to appear
+    print("  Waiting for DMEWorks to start...", end="", flush=True)
+    app = None
+    for _ in range(20):
+        time.sleep(1)
+        print(".", end="", flush=True)
+        try:
+            app = Application(backend="uia").connect(
+                title_re="(?i).*login.*|.*DMEWorks.*", timeout=1
+            )
+            break
+        except Exception:
+            pass
+    print()
+
+    if not app:
+        print("  DMEWorks did not appear after 20s.")
+        return False
+
+    # Auto-login if credentials are configured
+    if username and password:
+        try:
+            win = app.top_window()
+            # Try common auto_id patterns for the username field
+            for uid in ("txtUserName", "textBoxUserName", "txtUsername", "Username"):
+                try:
+                    win.child_window(auto_id=uid).set_edit_text(username)
+                    break
+                except Exception:
+                    pass
+            # Password field
+            for uid in ("txtPassword", "textBoxPassword", "txtPass", "Password"):
+                try:
+                    win.child_window(auto_id=uid).set_edit_text(password)
+                    break
+                except Exception:
+                    pass
+            # Click login/OK button
+            for title in ("Login", "OK", "Log In", "Sign In"):
+                try:
+                    win.child_window(title=title, control_type="Button").click_input()
+                    break
+                except Exception:
+                    pass
+            print("  Credentials submitted.")
+        except Exception as _e:
+            print(f"  Auto-login failed ({_e}) — log in manually and press Enter.")
+            try:
+                input()
+            except (EOFError, KeyboardInterrupt):
+                pass
+    else:
+        print("  No DMEWorks credentials in Doppler (DMEWORKS_USERNAME / DMEWORKS_PASSWORD).")
+        print("  Log in manually, then press Enter.")
+        try:
+            input()
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+    # Wait up to 45s for the main DMEWorks window to be ready
+    print("  Waiting for main window...", end="", flush=True)
+    for _ in range(45):
+        time.sleep(1)
+        print(".", end="", flush=True)
+        try:
+            Application(backend="uia").connect(title="DMEWorks", timeout=1)
+            print(" ready.")
+            return True
+        except Exception:
+            pass
+    print(" timed out.")
+    return False
+
+
 # ── main menu ─────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -175,17 +301,31 @@ def main() -> None:
         sys.exit(1)
 
     if not dmeworks_ok:
-        print("  DMEWorks not running — entry options unavailable.")
-        print("  Verification (option 3) is still available.")
+        if pywinauto_ok:
+            print("  DMEWorks not running.")
+            try:
+                launch_choice = input("  Launch DMEWorks now? [y/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                launch_choice = "n"
+            if launch_choice == "y":
+                dmeworks_ok = _launch_dmeworks()
+                if dmeworks_ok:
+                    print("  DMEWorks ready.")
+                else:
+                    print("  Could not confirm DMEWorks is ready — entry options unavailable.")
+                    print("  Verification (option 3) is still available.")
+            else:
+                print("  Entry options unavailable. Verification (option 3) is still available.")
+        else:
+            print("  DMEWorks not running — entry options unavailable.")
+            print("  Verification (option 3) is still available.")
     else:
         print("  All checks passed.")
     print()
 
-    print("  (Client codes are configured in the Notion Clients database)")
-    print()
     print("  Entry")
-    print("  [1]  Test entry      —  synthetic patient (--client test)")
-    print("  [2]  Full entry      —  select client below")
+    print("  [1]  Test entry      —  synthetic patient")
+    print("  [2]  Full entry      —  select client from list")
     print()
     print("  Verification")
     print("  [3]  Verify & correct  —  compare Notion vs DMEworks, fix mismatches")
@@ -219,17 +359,19 @@ def main() -> None:
         if choice == "1":
             _launch("entry_test", ["--client", "test"])
 
-        elif choice == "2":
-            client_code = input("  Client code: ").strip()
-            _launch("entry", ["--client", client_code])
-
-        elif choice == "3":
-            client_code = input("  Client code: ").strip()
-            dry = input("  Dry run? (shows diffs only, no writes) [y/N]: ").strip().lower()
-            args = ["--client", client_code]
-            if dry == "y":
-                args.append("--dry-run")
-            _launch("verify", args)
+        elif choice in ("2", "3"):
+            client_code = _prompt_client_code()
+            if choice == "2":
+                _launch("entry", ["--client", client_code])
+            else:
+                try:
+                    dry = input("  Dry run? (shows diffs only, no writes) [y/N]: ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    dry = "n"
+                args = ["--client", client_code]
+                if dry == "y":
+                    args.append("--dry-run")
+                _launch("verify", args)
 
         elif choice == "4":
             _launch("map_policy", [])
