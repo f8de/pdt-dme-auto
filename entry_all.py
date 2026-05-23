@@ -778,7 +778,7 @@ def main():
     log.info("=" * 52)
 
 
-if __name__ == "__main__":
+def run():
     _t = threading.Thread(target=_overlay_thread, daemon=True)
     _t.start()
     try:
@@ -786,3 +786,7 @@ if __name__ == "__main__":
     finally:
         _status_q.put(None)
         _t.join(timeout=3)
+
+
+if __name__ == "__main__":
+    run()

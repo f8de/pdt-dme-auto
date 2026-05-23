@@ -479,5 +479,9 @@ def main():
     log.info("=" * 52)
 
 
-if __name__ == "__main__":
+def run():
     main()
+
+
+if __name__ == "__main__":
+    run()

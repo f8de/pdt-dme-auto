@@ -6,7 +6,7 @@ import os
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 
 a = Analysis(
-    [os.path.join(ROOT, "entry_all.py")],
+    [os.path.join(ROOT, "run.py")],
     pathex=[ROOT],
     binaries=[],
     datas=[],
@@ -19,6 +19,16 @@ a = Analysis(
         "urllib3",
         "urllib3.util.retry",
         "charset_normalizer",
+        "entry_all",
+        "entry_test",
+        "tools.verify_dmeworks",
+        "tools.map_policy_dialog",
+        "tools.map_insurance_company_tabs",
+        "tools.dmeworks_grid_probe",
+        "utils.creds",
+        "utils.notion",
+        "utils.logger",
+        "utils.db",
     ],
     hookspath=[],
     runtime_hooks=[],
@@ -41,6 +51,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     console=True,
+    uac_admin=True,
     icon=os.path.join(SPECPATH, "icon.ico"),
     version=os.path.join(SPECPATH, "version_info.txt"),
 )
