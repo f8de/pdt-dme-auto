@@ -136,10 +136,10 @@ DMEWORKS_EXE = r"C:\Program Files (x86)\DMEWorks\DMEWorks.exe"
 def get_dmeworks_creds() -> tuple[str, str]:
     """Return (username, password) from Doppler.
 
-    Doppler keys: DMEWORKS_USERNAME, DMEWORKS_PASSWORD
+    Doppler keys: DMEWORKS_BILLER_USERNAME, DMEWORKS_BILLER_PASSWORD
     """
     s = _get_secrets()
     return (
-        s.get("DMEWORKS_USERNAME", "").strip(),
-        s.get("DMEWORKS_PASSWORD", "").strip(),
+        s.get("DMEWORKS_BILLER_USERNAME", "").strip(),
+        s.get("DMEWORKS_BILLER_PASSWORD", "").strip(),
     )
