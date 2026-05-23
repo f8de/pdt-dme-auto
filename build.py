@@ -102,42 +102,8 @@ def package(version: str) -> None:
         shutil.rmtree(DEPLOY_DIR)
     DEPLOY_DIR.mkdir(parents=True)
 
-    shutil.copy2(EXE_OUT,          DEPLOY_DIR / "dme-auto.exe")
-    shutil.copy2(ROOT / "run.ps1", DEPLOY_DIR / "run.ps1")
-    shutil.copy2(ROOT / "run.bat", DEPLOY_DIR / "run.bat")
-
-    (DEPLOY_DIR / "DEPLOY.md").write_text(f"""\
-# DME Auto v{version}
-
-## First-time setup on target machine
-
-1. Copy this folder to the machine (e.g. `C:\\dme-auto\\`)
-2. Generate a Doppler service token:
-   - Doppler dashboard > dme-auto > dev > Access > Service Tokens > Generate
-3. Double-click `dme-auto.exe` (or run `run.bat`)
-   - First run auto-detects no token and prompts for setup
-   - Paste the Doppler service token — DPAPI encrypted, this user/machine only
-4. Add client config to Notion Clients database (host, user, password, db)
-5. DMEworks must be open before running entry
-
-## Run
-
-Double-click `dme-auto.exe` or `run.bat`.
-
-## Files
-
-| File          | Purpose                                              |
-|---------------|------------------------------------------------------|
-| `dme-auto.exe`| Standalone app — no Python required. v{version} embedded. |
-| `run.bat`     | Double-click launcher                                |
-| `run.ps1`     | PowerShell launcher (dev/scripting)                  |
-
-## Version
-
-`{version}`
-""", encoding="utf-8")
-
-    print(f"      {DEPLOY_DIR}")
+    shutil.copy2(EXE_OUT, DEPLOY_DIR / "dme-auto.exe")
+    print(f"      dme-auto.exe  (v{version})")
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
