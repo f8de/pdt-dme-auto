@@ -23,6 +23,7 @@ from datetime import datetime
 import mysql.connector
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from utils.creds import get_notion_token
 from utils.notion import (
     fetch_all_doctors,
     fetch_all_insurance,
@@ -311,9 +312,10 @@ def main() -> None:
                         help="Show diffs without writing anything to DMEworks")
     args = parser.parse_args()
 
-    token = os.environ.get("NOTION_TOKEN", "").strip()
-    if not token:
-        sys.exit("NOTION_TOKEN not set in environment.")
+    try:
+        token = get_notion_token()
+    except RuntimeError as exc:
+        sys.exit(str(exc))
 
     if args.dry_run:
         print("  [DRY RUN — no changes will be written]")
