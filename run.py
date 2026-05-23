@@ -133,11 +133,14 @@ def main() -> None:
     elif choice == "3":
         try:
             client_code = input("  Client code: ").strip()
+            dry = input("  Dry run? (shows diffs only, no writes) [y/N]: ").strip().lower()
         except (KeyboardInterrupt, EOFError):
             print()
             sys.exit(0)
         script = os.path.join(SCRIPT_DIR, "tools", "verify_dmeworks.py")
         extra_args = ["--client", client_code]
+        if dry == "y":
+            extra_args.append("--dry-run")
     elif choice == "4":
         script = os.path.join(SCRIPT_DIR, "tools", "map_policy_dialog.py")
     elif choice == "5":
