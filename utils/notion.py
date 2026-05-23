@@ -42,6 +42,30 @@ def fetch_work_queue(token: str) -> list[dict]:
     return patients
 
 
+def fetch_entered_patients(token: str) -> list[dict]:
+    """Return all patients where Status = 'In DMEworks' (already entered)."""
+    url     = f"{_BASE}/databases/{_PATIENT_DB_ID}/query"
+    payload = {
+        "filter": {
+            "property": "Status",
+            "select": {"equals": "In DMEworks"},
+        }
+    }
+    patients: list[dict] = []
+    while True:
+        resp = requests.post(url, headers=_headers(token), json=payload, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        for page in data["results"]:
+            p = _parse_patient(token, page)
+            if p:
+                patients.append(p)
+        if not data.get("has_more"):
+            break
+        payload["start_cursor"] = data["next_cursor"]
+    return patients
+
+
 def fetch_insurance_map(token: str) -> dict[str, str]:
     """Return {state: company_name} for all active insurance companies."""
     url     = f"{_BASE}/databases/{_INSURANCE_DB_ID}/query"
