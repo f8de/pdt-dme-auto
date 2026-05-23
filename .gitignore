@@ -8,5 +8,4 @@ dist/
 build/
 deploy/
 *.spec.bak
-pdfs/
 .pytest_cache/
