@@ -27,16 +27,13 @@ def draw_icon(size: int) -> Image.Image:
                         radius=r, fill=BLUE)
 
     if size <= 16:
-        # 16px: white background, bold blue "D" + green dot — high contrast
-        d.rounded_rectangle([pad, pad, size - pad - 1, size - pad - 1],
-                            radius=r, fill=WHITE)
-        # Bold blue border
-        d.rounded_rectangle([pad, pad, size - pad - 1, size - pad - 1],
-                            radius=r, outline=BLUE, width=max(1, size // 8))
-        # Green dot bottom-right corner
-        dot_r = max(2, size // 5)
-        d.ellipse([size - pad - dot_r * 2 - 1, size - pad - dot_r * 2 - 1,
-                   size - pad - 1, size - pad - 1], fill=GREEN)
+        # 16px: solid blue square, thick white checkmark — stands out in Explorer
+        cx, cy = size // 2, size // 2
+        ck_w = max(2, size // 5)
+        p1 = (cx - size // 4, cy)
+        p2 = (cx - size // 10, cy + size // 4)
+        p3 = (cx + size // 3, cy - size // 5)
+        d.line([p1, p2, p3], fill=WHITE, width=ck_w)
         return img
 
     # ── clipboard body ────────────────────────────────────────────────────────
