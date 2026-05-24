@@ -71,6 +71,7 @@ a = Analysis(
         "mysql.connector",
         "mysql.connector.locales",
         "mysql.connector.locales.eng",
+        "mysql.connector.authentication",
         "requests",
         "requests.adapters",
         "urllib3",
