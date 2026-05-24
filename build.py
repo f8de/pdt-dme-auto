@@ -102,8 +102,9 @@ def package(version: str) -> None:
         shutil.rmtree(DEPLOY_DIR)
     DEPLOY_DIR.mkdir(parents=True)
 
-    shutil.copy2(EXE_OUT, DEPLOY_DIR / "dme-auto.exe")
-    print(f"      dme-auto.exe  (v{version})")
+    versioned = f"dme-auto-{version}.exe"
+    shutil.copy2(EXE_OUT, DEPLOY_DIR / versioned)
+    print(f"      {versioned}")
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────

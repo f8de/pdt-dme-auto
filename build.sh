@@ -50,11 +50,12 @@ EXE_SIZE=$(stat -c%s "dist/dme-auto.exe" 2>/dev/null || stat -f%z "dist/dme-auto
 EXE_MB=$((EXE_SIZE / 1048576))
 echo "  [OK]  dist/dme-auto.exe  (${EXE_MB} MB)"
 
-if [ -f "deploy/dme-auto.exe" ]; then
-    DEPLOY_SIZE=$(stat -c%s "deploy/dme-auto.exe" 2>/dev/null || stat -f%z "deploy/dme-auto.exe")
+for f in deploy/dme-auto-*.exe; do
+    [ -f "$f" ] || continue
+    DEPLOY_SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
     DEPLOY_MB=$((DEPLOY_SIZE / 1048576))
-    echo "  [OK]  deploy/dme-auto.exe  (${DEPLOY_MB} MB)"
-fi
+    echo "  [OK]  $f  (${DEPLOY_MB} MB)"
+done
 
 echo "  Finished: $(date)"
 echo "=================================================="

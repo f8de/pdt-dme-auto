@@ -61,10 +61,10 @@ set /a EXE_MB=!EXE_SIZE! / 1048576
 
 echo   [OK]  dist\dme-auto.exe  (!EXE_MB! MB^)
 
-if exist "deploy\dme-auto.exe" (
-    for %%F in ("deploy\dme-auto.exe") do set DEPLOY_SIZE=%%~zF
+for %%F in ("deploy\dme-auto-*.exe") do (
+    set DEPLOY_SIZE=%%~zF
     set /a DEPLOY_MB=!DEPLOY_SIZE! / 1048576
-    echo   [OK]  deploy\dme-auto.exe  (!DEPLOY_MB! MB^)
+    echo   [OK]  %%~nxF  (!DEPLOY_MB! MB^)
 )
 
 echo   Finished: %DATE% %TIME%
