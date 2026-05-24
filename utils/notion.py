@@ -6,7 +6,6 @@ import requests
 
 _BASE               = "https://api.notion.com/v1"
 _PATIENT_DB_ID      = "9c83bd769bb9424bac74d4760a1450f4"
-_CLIENTS_DB_ID      = "9051e0ddc1be47dcb727f236fa599000"
 _INSURANCE_DB_ID    = "b2844e66f56443b7a9cf5a9d08d5d93c"
 _DOCTORS_DB_ID      = "8cfb6a87328d463fb3d24b811d0c6c16"
 _NOTION_VERSION     = "2022-06-28"
@@ -60,10 +59,6 @@ def fetch_work_queue(token: str) -> list[dict]:
         payload["start_cursor"] = data["next_cursor"]
     return patients
 
-
-def fetch_entered_patients(token: str) -> list[dict]:
-    """Return all patients where Status = 'In DMEworks' (already entered)."""
-    return fetch_patients_by_statuses(token, ["In DMEworks"])
 
 
 def fetch_patients_by_statuses(token: str, statuses: list[str] | None = None) -> list[dict]:
@@ -153,52 +148,6 @@ def fetch_insurance_map(token: str) -> dict[str, str]:
         payload["start_cursor"] = data["next_cursor"]
     return state_map
 
-
-def fetch_db_name(token: str, client_code: str) -> str:
-    """Return the MySQL database name for client_code from Notion Clients DB."""
-    url     = f"{_BASE}/databases/{_CLIENTS_DB_ID}/query"
-    payload = {
-        "filter": {
-            "and": [
-                {"property": "Client Code", "title": {"equals": client_code}},
-                {"property": "Active", "checkbox": {"equals": True}},
-            ]
-        }
-    }
-    results = _request("post", url, _headers(token), json=payload).json()["results"]
-    if not results:
-        raise ValueError(
-            f"No active client found for '{client_code}' in Notion Clients DB."
-        )
-    props    = results[0]["properties"]
-    rt_items = props.get("DB Database", {}).get("rich_text", [])
-    db_name  = rt_items[0]["plain_text"].strip() if rt_items else ""
-    if not db_name:
-        raise ValueError(
-            f"Client '{client_code}' has no 'DB Database' value in Notion Clients DB."
-        )
-    return db_name
-
-
-def list_clients(token: str) -> list[dict]:
-    """Return all active clients as [{"code": ..., "name": ...}] for menu display."""
-    url     = f"{_BASE}/databases/{_CLIENTS_DB_ID}/query"
-    payload = {"filter": {"property": "Active", "checkbox": {"equals": True}}}
-    clients = []
-    while True:
-        data = _request("post", url, _headers(token), json=payload).json()
-        for page in data["results"]:
-            props = page["properties"]
-            title_items = props.get("Client Code", {}).get("title", [])
-            code        = title_items[0]["plain_text"].strip() if title_items else ""
-            rt_items    = props.get("Name", {}).get("rich_text", [])
-            name        = rt_items[0]["plain_text"].strip() if rt_items else ""
-            if code:
-                clients.append({"code": code, "name": name})
-        if not data.get("has_more"):
-            break
-        payload["start_cursor"] = data["next_cursor"]
-    return sorted(clients, key=lambda c: c["code"])
 
 
 def mark_in_dmeworks(token: str, page_id: str) -> None:

@@ -1,32 +1,43 @@
 """
 Targeted DB checks and verification against the DMEworks company schema.
-host/port hardcoded, user/password from Doppler, database name from Notion.
-Read-only — never write directly. Call db.configure(client_code, token) once at startup.
+All connection params from Doppler. Read-only — never write directly.
+Call db.configure() once at startup.
 """
+
+import json
+import os
+import sys
 
 import mysql.connector
 
 _conn_params: dict | None = None
 
 
-def build_config(client_code: str, token: str) -> dict:
-    """Assemble MySQL connection params from all sources."""
+def _load_db_ref() -> dict:
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    path = os.path.join(base, "config", "database_reference.json")
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def build_config(database: str | None = None) -> dict:
+    """Assemble MySQL connection params. database defaults to 'allied' from database_reference.json."""
     from utils.creds import get_mysql_creds, MYSQL_HOST, MYSQL_PORT
-    from utils.notion import fetch_db_name
     user, password = get_mysql_creds()
+    db_name = database or _load_db_ref()["allied"]
     return {
         "host":     MYSQL_HOST,
         "port":     MYSQL_PORT,
-        "database": fetch_db_name(token, client_code),
+        "database": db_name,
         "user":     user,
         "password": password,
     }
 
 
-def configure(client_code: str, token: str) -> None:
+def configure(database: str | None = None) -> None:
     """Build and store DB connection params for this session."""
     global _conn_params
-    _conn_params = build_config(client_code, token)
+    _conn_params = build_config(database)
 
 
 def _connect():

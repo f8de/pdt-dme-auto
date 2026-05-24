@@ -10,7 +10,7 @@ Failsafes:
   Row-count assertion: warns if UPDATE affected 0 rows.
 
 Usage:
-    python tools/verify_dmeworks.py --client <CLIENT_CODE> [--dry-run]
+    python tools/verify_dmeworks.py [--dry-run]
     NOTION_TOKEN must be set in the environment.
 """
 import argparse
@@ -28,7 +28,6 @@ from utils.logger import get_logger, mask_mbi, mask_dob
 from utils.notion import (
     fetch_all_doctors,
     fetch_all_insurance,
-    fetch_entered_patients,
     fetch_patients_by_statuses,
 )
 
@@ -361,7 +360,6 @@ def _apply(cur, all_diffs: list[tuple], dry_run: bool) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Verify all Notion DBs against DMEworks")
-    parser.add_argument("--client",  required=True, help="Client code (e.g. c02)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show diffs without writing anything to DMEworks")
     args = parser.parse_args()
@@ -372,7 +370,7 @@ def main() -> None:
         log.error("Failed to get Notion token: %s", exc)
         sys.exit(str(exc))
 
-    log.info("verify start — client=%s dry_run=%s", args.client, args.dry_run)
+    log.info("verify start — dry_run=%s", args.dry_run)
 
     if args.dry_run:
         print("  [DRY RUN — no changes will be written]")
@@ -428,7 +426,7 @@ def main() -> None:
     print("\nConnecting to DMEworks DB...")
     try:
         from utils.db import build_config
-        cfg  = build_config(args.client, token)
+        cfg  = build_config()
         conn = mysql.connector.connect(**cfg)
     except mysql.connector.Error as exc:
         log.error("DB connection failed: %s", exc)

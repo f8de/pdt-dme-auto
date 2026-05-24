@@ -3,8 +3,8 @@ DMEworks Entry TEST — synthetic test record only.
 Safe to re-run. All data is fake — for automation verification only.
 
 Usage:
-  python entry_test.py [--client test]
-  python entry_test.py [--client test] --dry-run
+  python entry_test.py
+  python entry_test.py --dry-run
 
 Prerequisites: DMEworks open on main screen, all child windows closed.
 """
@@ -29,7 +29,6 @@ log = get_logger("dmeworks.test")
 def _parse_args():
     import argparse
     p = argparse.ArgumentParser()
-    p.add_argument("--client",  default="test", help="Client code (default: test)")
     p.add_argument("--dry-run", action="store_true")
     return p.parse_args()
 
@@ -59,9 +58,9 @@ _token            = get_notion_token()
 INSURANCE_BY_STATE = notion.fetch_insurance_map(_token)
 
 try:
-    db.configure(ARGS.client, _token)
+    db.configure(db._load_db_ref()["test"])
 except Exception as e:
-    log.warning("DB config not found for client '%s' — DB checks will be skipped: %s", ARGS.client, e)
+    log.warning("DB config failed — DB checks will be skipped: %s", e)
     import utils.db as _db_mod
     _db_mod._conn_params = None
 
@@ -452,7 +451,7 @@ def main():
         log.info("*** DRY RUN MODE — no changes will be made to DMEworks ***")
 
     log.info("=" * 52)
-    log.info("DMEworks TEST — synthetic test record (client: %s)", ARGS.client)
+    log.info("DMEworks TEST — synthetic test record")
     log.info("=" * 52)
 
     medicare_name = INSURANCE_BY_STATE.get(TEST_PATIENT["state"])

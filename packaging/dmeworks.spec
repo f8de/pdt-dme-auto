@@ -63,7 +63,9 @@ a = Analysis(
     [os.path.join(ROOT, "run.py")],
     pathex=[ROOT],
     binaries=pw_b + ct_b + w32_b,
-    datas=pw_d + ct_d + w32_d,
+    datas=pw_d + ct_d + w32_d + [
+        (os.path.join(ROOT, "config", "database_reference.json"), "config"),
+    ],
     hiddenimports=pw_h + ct_h + w32_h + [
         "mysql.connector",
         "mysql.connector.locales",

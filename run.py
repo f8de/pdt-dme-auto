@@ -134,35 +134,6 @@ def check_prereqs() -> list[tuple[str, bool, str]]:
     return results
 
 
-# ── client picker ─────────────────────────────────────────────────────────────
-
-def _prompt_client_code() -> str:
-    """Show active clients from Notion, then prompt for a code."""
-    try:
-        from utils.creds import get_notion_token
-        from utils.notion import list_clients
-        print()
-        print("  Loading client list...")
-        token   = get_notion_token()
-        clients = list_clients(token)
-        if clients:
-            print()
-            print(f"  {'Code':<14} Name")
-            print(f"  {'-'*14} {'-'*30}")
-            for c in clients:
-                print(f"  {c['code']:<14} {c['name']}")
-        else:
-            print("  (No active clients found in Notion Clients DB)")
-    except Exception as _e:
-        print(f"  (Could not load client list: {_e})")
-    print()
-    try:
-        return input("  Client code: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        sys.exit(0)
-
-
 # ── dmeworks launcher ──────────────────────────────────────────────────────────
 
 def _launch_dmeworks() -> bool:
@@ -170,20 +141,25 @@ def _launch_dmeworks() -> bool:
     Returns True once the main DMEWorks window is confirmed ready."""
     import time
     try:
-        from utils.creds import get_dmeworks_creds, DMEWORKS_EXE
+        from utils.creds import get_dmeworks_creds, get_dmeworks_exe
         from pywinauto import Application
     except Exception as _e:
         print(f"  Cannot launch DMEWorks: {_e}")
         return False
 
     username, password = get_dmeworks_creds()
+    dmeworks_exe = get_dmeworks_exe()
 
-    if not os.path.exists(DMEWORKS_EXE):
-        print(f"  DMEWorks not found at: {DMEWORKS_EXE}")
+    if not os.path.exists(dmeworks_exe):
+        print(f"  DMEWorks not found. Searched:")
+        from utils.creds import _DMEWORKS_CANDIDATES
+        for p in _DMEWORKS_CANDIDATES:
+            print(f"    {p}")
+        print("  Set DMEWORKS_EXE_PATH in Doppler to override.")
         return False
 
-    print(f"  Starting: {DMEWORKS_EXE}")
-    subprocess.Popen([DMEWORKS_EXE])
+    print(f"  Starting: {dmeworks_exe}")
+    subprocess.Popen([dmeworks_exe])
 
     # Wait up to 20s for a login or splash window to appear
     print("  Waiting for DMEWorks to start...", end="", flush=True)
@@ -349,21 +325,18 @@ def main() -> None:
 
     try:
         if choice == "1":
-            _launch("entry_test", ["--client", "test"])
+            _launch("entry_test", [])
 
-        elif choice in ("2", "3"):
-            client_code = _prompt_client_code()
-            if choice == "2":
-                _launch("entry", ["--client", client_code])
-            else:
-                try:
-                    dry = input("  Dry run? (shows diffs only, no writes) [y/N]: ").strip().lower()
-                except (EOFError, KeyboardInterrupt):
-                    dry = "n"
-                args = ["--client", client_code]
-                if dry == "y":
-                    args.append("--dry-run")
-                _launch("verify", args)
+        elif choice == "2":
+            _launch("entry", [])
+
+        elif choice == "3":
+            try:
+                dry = input("  Dry run? (shows diffs only, no writes) [y/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                dry = "n"
+            args = ["--dry-run"] if dry == "y" else []
+            _launch("verify", args)
 
         elif choice == "4":
             _launch("map_policy", [])

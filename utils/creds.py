@@ -130,7 +130,23 @@ def get_mysql_creds() -> tuple[str, str]:
     return user, password
 
 
-DMEWORKS_EXE = r"C:\Program Files (x86)\DMEWorks\DMEWorks.exe"
+_DMEWORKS_CANDIDATES = [
+    r"C:\Program Files (x86)\DMEWorks\DMEWorks.exe",
+    r"C:\Program Files\DMEWorks\DMEWorks.exe",
+    r"C:\DMEWorks\DMEWorks.exe",
+    r"C:\DMEWorks Billing Software\DMEWorks.exe",
+]
+
+
+def get_dmeworks_exe() -> str:
+    """Return path to DMEWorks.exe — checks Doppler override, then common install paths."""
+    override = _get_secrets().get("DMEWORKS_EXE_PATH", "").strip()
+    if override and os.path.exists(override):
+        return override
+    for p in _DMEWORKS_CANDIDATES:
+        if os.path.exists(p):
+            return p
+    return _DMEWORKS_CANDIDATES[0]
 
 
 def get_dmeworks_creds() -> tuple[str, str]:

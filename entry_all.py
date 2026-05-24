@@ -3,11 +3,10 @@ DMEworks Patient Entry.
 Safe to re-run. Skips any record that already exists in the DB.
 
 Usage:
-  python entry_all.py --client <code>
-  python entry_all.py --client <code> --dry-run
+  python entry_all.py
+  python entry_all.py --dry-run
 
 Prerequisites: DMEworks open on main screen, all child windows closed.
-Run 'python manage_clients.py list' to see available client codes.
 """
 
 import ctypes
@@ -34,7 +33,6 @@ log = get_logger()
 def _parse_args():
     import argparse
     p = argparse.ArgumentParser()
-    p.add_argument("--client",  default=None, help="Client code")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--setup", action="store_true",
                    help="Re-run Doppler token setup (overwrites saved token)")
@@ -53,10 +51,6 @@ if ARGS.setup:
     _ensure_doppler_token()
     print("  Setup complete. Run without --setup to launch the app.")
     sys.exit(0)
-
-if not ARGS.client:
-    print("error: --client is required")
-    sys.exit(1)
 
 # ─── LOAD CLIENT DATA ─────────────────────────────────────────────────────────
 
@@ -93,7 +87,7 @@ for _p in PATIENTS:
         _seen_ins.add(_sec_name)
         INSURANCE_COMPANIES.append({"name": _sec_name, "type": "OTHER"})
 
-db.configure(ARGS.client, _token)
+db.configure()
 
 # ─── STATUS OVERLAY ───────────────────────────────────────────────────────────
 
@@ -676,9 +670,9 @@ def main():
     if DRY_RUN:
         log.info("*** DRY RUN MODE — no changes will be made to DMEworks ***")
 
-    set_status(f"Starting — {ARGS.client} ({len(PATIENTS)} patients)")
+    set_status(f"Starting — Allied ({len(PATIENTS)} patients)")
     log.info("=" * 52)
-    log.info("DMEworks Entry — %s (%d patients)", ARGS.client, len(PATIENTS))
+    log.info("DMEworks Entry — Allied (%d patients)", len(PATIENTS))
     log.info("=" * 52)
 
     log.info("")
