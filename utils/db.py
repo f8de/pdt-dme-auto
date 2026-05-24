@@ -32,6 +32,7 @@ def build_config(database: str | None = None) -> dict:
         "user":     user,
         "password": password,
         "charset":  "latin1",
+        "use_pure": True,
     }
 
 
@@ -379,8 +380,9 @@ def insert_patient(patient: dict, insurance_map: dict, dry_run: bool = False) ->
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (customer_id, sec_ins_id, sec_ins_type, sec["policy"], 2, "18", 10))
 
-        cur.execute("CALL c02.mir_update_customer(%s)", (customer_id,))
-        cur.execute("CALL c02.mir_update_customer_insurance(%s)", (customer_id,))
+        db_name = _conn_params["database"]
+        cur.execute(f"CALL {db_name}.mir_update_customer(%s)", (customer_id,))
+        cur.execute(f"CALL {db_name}.mir_update_customer_insurance(%s)", (customer_id,))
 
         conn.commit()
         _log.info("[OK] Inserted customer ID=%d for %s", customer_id, label)
