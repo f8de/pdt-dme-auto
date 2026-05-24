@@ -394,37 +394,48 @@ def main() -> None:
         if choice == "0":
             print()
             sys.exit(0)
-        elif choice in ("1", "2", "3", "t"):
-            break
-        else:
+        elif choice not in ("1", "2", "3", "t"):
             print("  Enter 1, 2, 3, T, or 0.")
+            continue
 
-    try:
-        if choice == "1":
-            _launch("ingest_test", [])
+        try:
+            if choice == "1":
+                _launch("ingest_test", [])
 
-        elif choice == "2":
-            try:
-                mode = input("  Live writes (real DB changes) or dry-run? [live/DRY]: ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                mode = "dry"
-            extra = ["--live"] if mode == "live" else []
-            _launch("ingest", extra)
+            elif choice == "2":
+                try:
+                    mode = input("  Live writes (real DB changes) or dry-run? [live/DRY]: ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    mode = "dry"
+                extra = ["--live"] if mode == "live" else []
+                _launch("ingest", extra)
 
-        elif choice == "3":
-            try:
-                dry = input("  Dry run? (shows diffs only, no writes) [y/N]: ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                dry = "n"
-            args = ["--dry-run"] if dry == "y" else []
-            _launch("verify", args)
+            elif choice == "3":
+                try:
+                    dry = input("  Dry run? (shows diffs only, no writes) [y/N]: ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    dry = "n"
+                args = ["--dry-run"] if dry == "y" else []
+                _launch("verify", args)
 
-        elif choice == "t":
-            _tools_menu(dmeworks_ok, pywinauto_ok)
+            elif choice == "t":
+                _tools_menu(dmeworks_ok, pywinauto_ok)
 
-    except (KeyboardInterrupt, EOFError):
+        except (KeyboardInterrupt, EOFError):
+            print()
+            sys.exit(0)
+
         print()
-        sys.exit(0)
+        print("  Entry  (DMEWorks not required)")
+        print("  [1]  Test entry   —  dry-run against test client (c01)")
+        print("  [2]  Full entry   —  Allied")
+        print()
+        print("  Verification")
+        print("  [3]  Verify       —  compare Notion vs DMEworks")
+        print()
+        print("  [T]  Tools        —  diagnostic utilities")
+        print("  [0]  Exit")
+        print()
 
 
 if __name__ == "__main__":
