@@ -31,6 +31,7 @@ def build_config(database: str | None = None) -> dict:
         "database": db_name,
         "user":     user,
         "password": password,
+        "charset":  "latin1",
     }
 
 
@@ -105,8 +106,8 @@ def fetch_matching_mbis(mbis: list[str]) -> set[str]:
 
 def verify_patients(patients: list[dict]) -> dict[str, dict]:
     """
-    Deep verification query: joins customer + insurance + doctor tables.
-    Returns dict keyed by MBI with DB values for field-level comparison.
+    Deep verification: joins customer + primary insurance + doctor.
+    Returns dict keyed by MBI. Only primary insurance (Rank=1, InactiveDate IS NULL).
     """
     mbis = [p["mbi"] for p in patients]
     if not mbis:
@@ -125,14 +126,51 @@ def verify_patients(patients: list[dict]) -> dict[str, dict]:
                 c.City           AS city,
                 c.State          AS state,
                 c.Zip            AS zip,
+                c.Gender         AS gender,
+                c.Height         AS height,
+                c.Weight         AS weight,
                 d.NPI            AS doctor_npi,
                 d.LastName       AS doctor_last,
-                d.FirstName      AS doctor_first
+                d.FirstName      AS doctor_first,
+                c.ICD10_01       AS icd10_01,
+                c.ICD10_02       AS icd10_02,
+                c.ICD10_03       AS icd10_03,
+                c.ICD10_04       AS icd10_04,
+                c.ICD10_05       AS icd10_05,
+                c.ICD10_06       AS icd10_06,
+                c.ICD10_07       AS icd10_07,
+                c.ICD10_08       AS icd10_08,
+                c.ICD10_09       AS icd10_09,
+                c.ICD10_10       AS icd10_10,
+                c.ICD10_11       AS icd10_11,
+                c.ICD10_12       AS icd10_12
             FROM tbl_customer_insurance ci
             JOIN tbl_customer c  ON c.ID = ci.CustomerID
             LEFT JOIN tbl_doctor d ON d.ID = c.Doctor1_ID
             WHERE ci.PolicyNumber IN ({ph})
+              AND ci.Rank = 1
+              AND ci.InactiveDate IS NULL
         """, mbis)
         return {row["mbi"].strip(): row for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def validate_icd10_codes(codes: list[str]) -> set[str]:
+    """Return subset of codes that are NOT valid in dmeworks.tbl_icd10 (missing, header, or retired)."""
+    if not codes:
+        return set()
+    ph = ",".join(["%s"] * len(codes))
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT Code FROM dmeworks.tbl_icd10 "
+            f"WHERE Code IN ({ph}) AND Header = 0 "
+            f"AND (InactiveDate IS NULL OR InactiveDate > CURDATE())",
+            codes,
+        )
+        valid = {r[0].strip() for r in cur.fetchall()}
+        return set(codes) - valid
     finally:
         conn.close()
