@@ -333,6 +333,17 @@ def main() -> None:
     if not other_ok:
         print("  Fix failed checks before running.")
         print()
+        _exe_dir = os.path.dirname(sys.executable) if _FROZEN else SCRIPT_DIR
+        _crash   = os.path.join(_exe_dir, "crash.log")
+        try:
+            with open(_crash, "w", encoding="utf-8") as _f:
+                _f.write("Prereq check failed:\n")
+                for name, ok, detail in checks:
+                    status = "OK" if ok else "FAIL"
+                    _f.write(f"  [{status}]  {name}: {detail}\n")
+            print(f"  Details written to: {_crash}")
+        except Exception:
+            pass
         try:
             input("  Press Enter to exit...")
         except (EOFError, KeyboardInterrupt):
