@@ -45,12 +45,12 @@ if _FROZEN and len(sys.argv) > 1 and sys.argv[1] == "--dispatch":
         mode     = sys.argv[2]
         sys.argv = [sys.argv[0]] + sys.argv[3:]   # strip --dispatch <mode>
 
-        if mode == "entry":
-            import entry_all
-            entry_all.run()
-        elif mode == "entry_test":
-            import entry_test
-            entry_test.run()
+        if mode == "ingest":
+            import ingest
+            ingest.run()
+        elif mode == "ingest_test":
+            import ingest_test
+            ingest_test.run()
         elif mode == "verify":
             from tools.verify_dmeworks import main
             main()
@@ -95,8 +95,8 @@ def _launch(mode: str, extra_args: list[str]) -> None:
         subprocess.run([sys.executable, "--dispatch", mode] + extra_args)
     else:
         script_map = {
-            "entry":        os.path.join(SCRIPT_DIR, "entry_all.py"),
-            "entry_test":   os.path.join(SCRIPT_DIR, "entry_test.py"),
+            "ingest":       os.path.join(SCRIPT_DIR, "ingest.py"),
+            "ingest_test":  os.path.join(SCRIPT_DIR, "ingest_test.py"),
             "verify":       os.path.join(SCRIPT_DIR, "tools", "verify_dmeworks.py"),
             "map_policy":   os.path.join(SCRIPT_DIR, "tools", "map_policy_dialog.py"),
             "map_insurance":os.path.join(SCRIPT_DIR, "tools", "map_insurance_company_tabs.py"),
@@ -291,9 +291,9 @@ def main() -> None:
         print("  All checks passed.")
     print()
 
-    print("  Entry")
-    print("  [1]  Test entry      —  synthetic patient")
-    print("  [2]  Full entry      —  select client from list")
+    print("  Entry  (DMEWorks NOT required)")
+    print("  [1]  Test entry   —  dry-run against test client (c01)")
+    print("  [2]  Full entry   —  Allied (prompts: dry-run or live)")
     print()
     print("  Verification")
     print("  [3]  Verify & correct  —  compare Notion vs DMEworks, fix mismatches")
@@ -316,7 +316,7 @@ def main() -> None:
         if choice == "0":
             print()
             sys.exit(0)
-        elif choice in ("1", "2", "4", "5", "6") and not (dmeworks_ok and pywinauto_ok):
+        elif choice in ("4", "5", "6") and not (dmeworks_ok and pywinauto_ok):
             print("  That option requires DMEWorks to be running.")
         elif choice in ("1", "2", "3", "4", "5", "6"):
             break
@@ -325,10 +325,15 @@ def main() -> None:
 
     try:
         if choice == "1":
-            _launch("entry_test", [])
+            _launch("ingest_test", [])
 
         elif choice == "2":
-            _launch("entry", [])
+            try:
+                mode = input("  Live writes (real DB changes) or dry-run? [live/DRY]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                mode = "dry"
+            extra = ["--live"] if mode == "live" else []
+            _launch("ingest", extra)
 
         elif choice == "3":
             try:

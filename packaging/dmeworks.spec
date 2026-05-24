@@ -65,6 +65,7 @@ a = Analysis(
     binaries=pw_b + ct_b + w32_b,
     datas=pw_d + ct_d + w32_d + [
         (os.path.join(ROOT, "config", "database_reference.json"), "config"),
+        (os.path.join(ROOT, "config", "clients.json"), "config"),
     ],
     hiddenimports=pw_h + ct_h + w32_h + [
         "mysql.connector",
@@ -84,8 +85,8 @@ a = Analysis(
         "pythoncom",
         "win32com.client",
         "win32com.shell",
-        "entry_all",
-        "entry_test",
+        "ingest",
+        "ingest_test",
         "tools.verify_dmeworks",
         "tools.map_policy_dialog",
         "tools.map_insurance_company_tabs",
@@ -94,6 +95,8 @@ a = Analysis(
         "utils.notion",
         "utils.logger",
         "utils.db",
+        "utils.validate",
+        "utils.ui",
     ],
     hookspath=[],
     runtime_hooks=[os.path.join(SPECPATH, "hook_pywin32.py")],
