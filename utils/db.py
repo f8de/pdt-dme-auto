@@ -174,3 +174,84 @@ def validate_icd10_codes(codes: list[str]) -> set[str]:
         return set(codes) - valid
     finally:
         conn.close()
+
+
+# ─── WRITE FUNCTIONS ──────────────────────────────────────────────────────────
+# INSERT-only. Never UPDATE or DELETE. Parameterized SQL only.
+
+import logging as _logging
+_log = _logging.getLogger("dmeworks.db")
+
+
+def insert_doctor(doc: dict, dry_run: bool = False) -> int | None:
+    """INSERT into dmeworks.tbl_doctor; call MIR proc. Returns new ID or None (dry-run)."""
+    sql = """
+        INSERT INTO dmeworks.tbl_doctor
+            (FirstName, LastName, MiddleName, Suffix, Courtesy,
+             NPI, Address1, Address2, City, State, Zip,
+             Phone, Phone2, Fax,
+             Contact, Title, LicenseNumber, MedicaidNumber, UPINNumber, OtherID,
+             LastUpdateUserID, LastUpdateDatetime)
+        VALUES (%s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s, NOW())
+    """
+    params = (
+        doc.get("first", ""),
+        doc.get("last", ""),
+        (doc.get("mi", "") or "")[:1],
+        doc.get("suffix", ""),
+        doc.get("courtesy", "Dr.") or "Dr.",
+        doc.get("npi", ""),
+        doc.get("address1", ""),
+        doc.get("address2", ""),
+        doc.get("city", ""),
+        doc.get("state", ""),
+        doc.get("zip", ""),
+        doc.get("phone", ""),
+        "",               # Phone2
+        doc.get("fax", ""),
+        "",               # Contact
+        "",               # Title
+        "",               # LicenseNumber
+        "",               # MedicaidNumber
+        "",               # UPINNumber
+        "",               # OtherID
+        10,               # LastUpdateUserID
+    )
+    if dry_run:
+        _log.info("[DRY] INSERT doctor NPI=%s", doc.get("npi"))
+        return None
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        new_id = cur.lastrowid
+        cur.execute("CALL dmeworks.mir_update_doctor(%s)", (new_id,))
+        conn.commit()
+        return new_id
+    finally:
+        conn.close()
+
+
+def insert_insurance_company(name: str, dry_run: bool = False) -> int | None:
+    """INSERT into dmeworks.tbl_insurancecompany; call MIR proc. Returns new ID or None (dry-run)."""
+    sql = """
+        INSERT INTO dmeworks.tbl_insurancecompany (Name, LastUpdateUserID, LastUpdateDatetime)
+        VALUES (%s, %s, NOW())
+    """
+    if dry_run:
+        _log.info("[DRY] INSERT insurance company '%s'", name)
+        return None
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, (name, 10))
+        new_id = cur.lastrowid
+        cur.execute("CALL dmeworks.mir_update_insurancecompany(%s)", (new_id,))
+        conn.commit()
+        return new_id
+    finally:
+        conn.close()
