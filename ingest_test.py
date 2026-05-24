@@ -34,6 +34,7 @@ _TEST_PATIENT = {
     "gender": "Male", "height": "70", "weight": "160",
     "icd10": ["M54.5"],
     "secondary": None,
+    "notes": "Test note — automated ingest verification.",
     "_doctor": {"npi": _TEST_NPI},
     "_notion_page_id": None,
 }
@@ -213,6 +214,19 @@ def run() -> None:
         for iss in issues:
             log.error("  %s", iss)
         sys.exit(1)
+
+    # Notes verification
+    customer_id = row.get("customer_id")
+    if _TEST_PATIENT.get("notes") and customer_id:
+        notes_rows = db.verify_patient_notes(customer_id)
+        if not notes_rows:
+            log.error("FAIL: notes not found in tbl_customer_notes for customer_id=%d", customer_id)
+            sys.exit(1)
+        notes_texts = [r["Notes"] for r in notes_rows]
+        if _TEST_PATIENT["notes"] not in notes_texts:
+            log.error("FAIL: expected note text not found. got: %s", notes_texts)
+            sys.exit(1)
+        log.info("  Notes verified: %d row(s) in tbl_customer_notes", len(notes_rows))
 
     log.info("")
     log.info("RESULT: ALL CHECKS PASSED")

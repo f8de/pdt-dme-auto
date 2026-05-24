@@ -135,6 +135,7 @@ def verify_patients(patients: list[dict]) -> dict[str, dict]:
         cur = conn.cursor(dictionary=True)
         cur.execute(f"""
             SELECT
+                c.ID             AS customer_id,
                 ci.PolicyNumber  AS mbi,
                 c.FirstName      AS first,
                 c.LastName       AS last,
@@ -173,6 +174,20 @@ def verify_patients(patients: list[dict]) -> dict[str, dict]:
               AND ci.InactiveDate IS NULL
         """, mbis)
         return {row["mbi"].strip(): row for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def verify_patient_notes(customer_id: int) -> list[dict]:
+    """Return notes rows for a customer from tbl_customer_notes."""
+    conn = _connect()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT Notes, Active FROM tbl_customer_notes WHERE CustomerID = %s",
+            (customer_id,),
+        )
+        return cur.fetchall()
     finally:
         conn.close()
 
@@ -399,6 +414,14 @@ def insert_patient(patient: dict, insurance_map: dict, dry_run: bool = False) ->
                      PolicyNumber, Rank, RelationshipCode, LastUpdateUserID)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (customer_id, sec_ins_id, sec_ins_type, sec["policy"], 2, "18", 10))
+
+        notes = patient.get("notes", "")
+        if notes:
+            cur.execute("""
+                INSERT INTO tbl_customer_notes
+                    (CustomerID, Notes, Active, LastUpdateUserID, CreatedBy, CreatedAt)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+            """, (customer_id, notes, 1, 10, 10))
 
         db_name = _conn_params["database"]
         cur.execute(f"CALL {db_name}.mir_update_customer(%s)", (customer_id,))

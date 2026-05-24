@@ -63,6 +63,9 @@ if _FROZEN and len(sys.argv) > 1 and sys.argv[1] == "--dispatch":
         elif mode == "grid_probe":
             from tools.dmeworks_grid_probe import main
             main()
+        elif mode == "db_audit":
+            from tools.db_dump import main
+            main()
     except SystemExit:
         raise
     except Exception:
@@ -101,6 +104,7 @@ def _launch(mode: str, extra_args: list[str]) -> None:
             "map_policy":   os.path.join(SCRIPT_DIR, "tools", "map_policy_dialog.py"),
             "map_insurance":os.path.join(SCRIPT_DIR, "tools", "map_insurance_company_tabs.py"),
             "grid_probe":   os.path.join(SCRIPT_DIR, "tools", "dmeworks_grid_probe.py"),
+            "db_audit":     os.path.join(SCRIPT_DIR, "tools", "db_dump.py"),
         }
         subprocess.run([sys.executable, script_map[mode]] + extra_args)
 
@@ -278,6 +282,7 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
     print("  [1]  Map policy dialog       —  maps Policy Information controls")
     print("  [2]  Map insurance company   —  maps Insurance Company form controls")
     print("  [3]  Grid probe              —  probes DataGridView cell reading")
+    print("  [4]  DB Audit               —  dump all tables to tools/db_dump.txt")
     print()
     print("  [B]  Back")
     print()
@@ -302,8 +307,11 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
         elif choice == "3":
             _launch("grid_probe", [])
             return
+        elif choice == "4":
+            _launch("db_audit", [])
+            return
         else:
-            print("  Enter 1, 2, 3, or B.")
+            print("  Enter 1, 2, 3, 4, or B.")
 
 
 # ── main menu ─────────────────────────────────────────────────────────────────

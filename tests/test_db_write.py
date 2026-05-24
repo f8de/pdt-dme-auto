@@ -259,6 +259,64 @@ def test_insert_patient_secondary_inserts_rank2():
     assert len(ins_inserts) == 2
 
 
+def test_insert_patient_with_notes_inserts_customer_notes():
+    _configure_db()
+    from utils import db
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.side_effect = [
+        (100,),  # MAX acct
+        (7,),    # doctor ID
+        (3,),    # primary insurance ID
+    ]
+    mock_cursor.lastrowid = 9
+    conn_mock = MagicMock()
+    conn_mock.cursor.return_value = mock_cursor
+    patient = {
+        "first": "Jane", "last": "Doe", "mi": "", "suffix": "",
+        "dob": "01/15/1950", "mbi": "1AA0AA0AA11",
+        "address1": "", "address2": "", "city": "", "state": "NJ",
+        "zip": "", "phone": "", "gender": "Female",
+        "height": "", "weight": "",
+        "icd10": [],
+        "secondary": None,
+        "notes": "Patient requires wheelchair ramp.",
+        "_doctor": {"npi": "1234567890"},
+    }
+    with patch("mysql.connector.connect", return_value=conn_mock):
+        db.insert_patient(patient, {"NJ": "Medicare"}, dry_run=False)
+    execute_calls = [str(c) for c in mock_cursor.execute.call_args_list]
+    assert any("tbl_customer_notes" in c for c in execute_calls)
+
+
+def test_insert_patient_no_notes_skips_customer_notes():
+    _configure_db()
+    from utils import db
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.side_effect = [
+        (100,),  # MAX acct
+        (7,),    # doctor ID
+        (3,),    # primary insurance ID
+    ]
+    mock_cursor.lastrowid = 9
+    conn_mock = MagicMock()
+    conn_mock.cursor.return_value = mock_cursor
+    patient = {
+        "first": "Jane", "last": "Doe", "mi": "", "suffix": "",
+        "dob": "01/15/1950", "mbi": "1AA0AA0AA11",
+        "address1": "", "address2": "", "city": "", "state": "NJ",
+        "zip": "", "phone": "", "gender": "Female",
+        "height": "", "weight": "",
+        "icd10": [],
+        "secondary": None,
+        "notes": "",
+        "_doctor": {"npi": "1234567890"},
+    }
+    with patch("mysql.connector.connect", return_value=conn_mock):
+        db.insert_patient(patient, {"NJ": "Medicare"}, dry_run=False)
+    execute_calls = [str(c) for c in mock_cursor.execute.call_args_list]
+    assert not any("tbl_customer_notes" in c for c in execute_calls)
+
+
 def test_backup_databases_calls_mysqldump(tmp_path):
     _configure_db()
     from utils import db
