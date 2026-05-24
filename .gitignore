@@ -1,4 +1,5 @@
 graphify-out/
+pdfs/
 logs/
 __pycache__/
 *.pyc
