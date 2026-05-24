@@ -13,7 +13,7 @@ def _fresh_logger(name: str, log_dir: str):
     for h in existing.handlers[:]:
         existing.removeHandler(h)
     import utils.logger as ul
-    with patch("utils.logger._log_dir", side_effect=lambda: log_dir):
+    with patch("utils.logger._log_dir", return_value=log_dir):
         return ul.get_logger(name)
 
 
