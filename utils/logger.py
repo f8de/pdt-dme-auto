@@ -1,10 +1,14 @@
 import logging
 import os
-import re
 import sys
+import re
+import time
+from datetime import datetime
+
 
 _FMT     = "[%(asctime)s] %(levelname)-8s  %(name)-10s  %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
+_KEEP_DAYS = 30
 
 
 def _log_dir() -> str:
@@ -13,10 +17,23 @@ def _log_dir() -> str:
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
 
 
+def _purge_old_logs(log_dir: str) -> None:
+    cutoff = time.time() - _KEEP_DAYS * 86400
+    for fname in os.listdir(log_dir):
+        if fname.startswith("dme-auto-") and fname.endswith(".log"):
+            fpath = os.path.join(log_dir, fname)
+            try:
+                if os.path.getmtime(fpath) < cutoff:
+                    os.remove(fpath)
+            except OSError:
+                pass
+
+
 def get_logger(name: str = "dmeworks") -> logging.Logger:
     log_dir = _log_dir()
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "dme-auto.log")
+    _purge_old_logs(log_dir)
+    log_file = os.path.join(log_dir, f"dme-auto-{datetime.now():%Y-%m-%d}.log")
 
     logger = logging.getLogger(name)
     if logger.handlers:
@@ -28,7 +45,7 @@ def get_logger(name: str = "dmeworks") -> logging.Logger:
     ch.setLevel(logging.INFO)
     ch.setFormatter(logging.Formatter(_FMT, _DATEFMT))
 
-    fh = logging.FileHandler(log_file, mode="w", encoding="utf-8")
+    fh = logging.FileHandler(log_file, mode="a", encoding="utf-8")
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(logging.Formatter(_FMT, _DATEFMT))
 
@@ -38,15 +55,12 @@ def get_logger(name: str = "dmeworks") -> logging.Logger:
     return logger
 
 
-# ─── PHI MASKING ──────────────────────────────────────────────────────────────
-
 def mask_mbi(mbi: str) -> str:
-    """1EG4TE5MK72 or 1EG4-TE5-MK72 -> 1EG4-***-****"""
+    """Return masked MBI for logs — shows first 4 chars only."""
     clean = re.sub(r"[-\s]", "", mbi)
     prefix = clean[:4] if len(clean) >= 4 else clean
     return f"{prefix}-***-****"
 
 
 def mask_dob(dob: str) -> str:
-    """01/15/1950 -> **/**/****"""
     return "**/**/****"
