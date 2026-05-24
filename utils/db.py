@@ -255,3 +255,180 @@ def insert_insurance_company(name: str, dry_run: bool = False) -> int | None:
         return new_id
     finally:
         conn.close()
+
+
+_INS_TYPE_MAP = {
+    "MEDICARE": "MP",
+    "MEDICAID": "OT",
+    "MEDIGAP": "LT",
+    "SUPPLEMENTAL": "SP",
+    "COMMERCIAL_GROUP": "GP",
+    "COMMERCIAL_INDIVIDUAL": "IP",
+}
+
+
+def insert_patient(patient: dict, insurance_map: dict, dry_run: bool = False) -> int | None:
+    """
+    INSERT patient into tbl_customer + tbl_customer_insurance in a single transaction.
+    Calls c02.mir_update_customer and c02.mir_update_customer_insurance after all INSERTs.
+    Returns new customer ID or None (dry-run).
+    Raises RuntimeError if doctor or insurance lookups fail.
+    On any error: rolls back and re-raises.
+    """
+    from utils.logger import mask_mbi
+    from datetime import datetime as _dt2, date as _date2
+    mbi   = patient["mbi"]
+    label = f"MBI {mask_mbi(mbi)}"
+
+    icd10 = patient.get("icd10", [])
+    icd10_vals = tuple(icd10[i] if i < len(icd10) else None for i in range(12))
+
+    try:
+        height = float(patient["height"]) if patient.get("height") else None
+        weight = float(patient["weight"]) if patient.get("weight") else None
+    except (ValueError, TypeError):
+        height = weight = None
+
+    try:
+        dob = _dt2.strptime(patient["dob"], "%m/%d/%Y").date()
+    except ValueError as e:
+        raise ValueError(f"{label}: invalid DOB '{patient['dob']}'") from e
+
+    if dry_run:
+        _log.info("[DRY] INSERT patient %s %s | %s", patient["first"], patient["last"], label)
+        return None
+
+    conn = _connect()
+    try:
+        conn.start_transaction()
+        cur = conn.cursor()
+
+        cur.execute("SELECT MAX(CAST(AccountNumber AS UNSIGNED)) FROM tbl_customer FOR UPDATE")
+        max_acct = cur.fetchone()[0] or 0
+        acct_num = str(max_acct + 1)
+
+        doctor_npi = patient.get("_doctor", {}).get("npi", "")
+        cur.execute("SELECT ID FROM dmeworks.tbl_doctor WHERE NPI = %s", (doctor_npi,))
+        row = cur.fetchone()
+        doctor_id = row[0] if row else None
+
+        medicare_name = insurance_map.get(patient["state"], "")
+        cur.execute(
+            "SELECT ID FROM dmeworks.tbl_insurancecompany WHERE LOWER(Name) = LOWER(%s)",
+            (medicare_name,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise RuntimeError(f"Insurance company not found: '{medicare_name}'")
+        ins_id = row[0]
+
+        cur.execute("""
+            INSERT INTO tbl_customer
+                (AccountNumber, FirstName, LastName, MiddleName, Suffix,
+                 DateofBirth, Address1, Address2, City, State, Zip, Phone,
+                 Doctor1_ID, POSTypeID, AccidentType, DeliveryDirections, EmergencyContact,
+                 Gender, Height, Weight,
+                 ICD10_01, ICD10_02, ICD10_03, ICD10_04, ICD10_05, ICD10_06,
+                 ICD10_07, ICD10_08, ICD10_09, ICD10_10, ICD10_11, ICD10_12,
+                 SetupDate, LastUpdateUserID, LastUpdateDatetime)
+            VALUES
+                (%s, %s, %s, %s, %s,
+                 %s, %s, %s, %s, %s, %s, %s,
+                 %s, %s, %s, %s, %s,
+                 %s, %s, %s,
+                 %s, %s, %s, %s, %s, %s,
+                 %s, %s, %s, %s, %s, %s,
+                 %s, %s, NOW())
+        """, (
+            acct_num,
+            patient.get("first", ""), patient.get("last", ""),
+            (patient.get("mi", "") or "")[:1], patient.get("suffix", ""),
+            dob,
+            patient.get("address1", ""), patient.get("address2", ""),
+            patient.get("city", ""), patient.get("state", ""),
+            patient.get("zip", ""), patient.get("phone", ""),
+            doctor_id, 12, "No", "", "",
+            patient.get("gender", "Male"), height, weight,
+            *icd10_vals,
+            _date2.today(), 10,
+        ))
+        customer_id = cur.lastrowid
+
+        cur.execute("""
+            INSERT INTO tbl_customer_insurance
+                (CustomerID, InsuranceCompanyID, InsuranceType,
+                 PolicyNumber, Rank, RelationshipCode, LastUpdateUserID)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (customer_id, ins_id, "MP", mbi, 1, "18", 10))
+
+        sec = patient.get("secondary")
+        if sec:
+            cur.execute(
+                "SELECT ID FROM dmeworks.tbl_insurancecompany WHERE LOWER(Name) = LOWER(%s)",
+                (sec["ins_company"],),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise RuntimeError(f"Secondary insurance company not found: '{sec['ins_company']}'")
+            sec_ins_id   = row[0]
+            sec_ins_type = _INS_TYPE_MAP.get(sec.get("ins_type", ""), "OT")
+            cur.execute("""
+                INSERT INTO tbl_customer_insurance
+                    (CustomerID, InsuranceCompanyID, InsuranceType,
+                     PolicyNumber, Rank, RelationshipCode, LastUpdateUserID)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (customer_id, sec_ins_id, sec_ins_type, sec["policy"], 2, "18", 10))
+
+        cur.execute("CALL c02.mir_update_customer(%s)", (customer_id,))
+        cur.execute("CALL c02.mir_update_customer_insurance(%s)", (customer_id,))
+
+        conn.commit()
+        _log.info("[OK] Inserted customer ID=%d for %s", customer_id, label)
+        return customer_id
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def backup_databases(backup_dir: str) -> str:
+    """
+    Dump c02 + dmeworks via mysqldump. Purge backups older than 7 days.
+    Returns path to new backup file.
+    Raises RuntimeError if mysqldump exits non-zero.
+    """
+    import subprocess
+    from pathlib import Path as _Path2
+    from datetime import datetime as _dt3
+    from utils.creds import get_mysql_creds, MYSQL_HOST, MYSQL_PORT
+    user, password = get_mysql_creds()
+    _Path2(backup_dir).mkdir(parents=True, exist_ok=True)
+
+    ts   = _dt3.now().strftime("%Y%m%d_%H%M%S")
+    path = str(_Path2(backup_dir) / f"backup_{ts}.sql")
+
+    cmd = [
+        "mysqldump",
+        f"--host={MYSQL_HOST}",
+        f"--port={MYSQL_PORT}",
+        f"--user={user}",
+        f"--password={password}",
+        "--databases", "c02", "dmeworks",
+    ]
+    with open(path, "w", encoding="utf-8") as fout:
+        result = subprocess.run(cmd, stdout=fout, stderr=subprocess.PIPE, text=True)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"mysqldump failed: {result.stderr.strip()}")
+
+    cutoff = _dt3.now().timestamp() - 7 * 86400
+    for old in _Path2(backup_dir).glob("backup_*.sql"):
+        try:
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
+        except OSError:
+            pass
+
+    return path
