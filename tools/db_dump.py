@@ -13,7 +13,9 @@ if _ROOT not in sys.path:
 
 from utils import db
 
-OUT = r"C:\db_dump.txt"
+_FROZEN = getattr(sys, "frozen", False)
+_EXE_DIR = os.path.dirname(sys.executable) if _FROZEN else _ROOT
+OUT = os.path.join(_EXE_DIR, "db_dump.txt")
 
 QUERIES = [
     ("Row counts", """
