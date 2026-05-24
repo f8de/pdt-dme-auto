@@ -54,5 +54,6 @@ Never run `ingest_test.py --live` against c02.
 
 - Parameterized SQL only — never f-strings or string concat in queries
 - `db.configure()` before queries — raises `RuntimeError` if skipped
-- `use_pure=True` in connection params — MySQL 5.7 server, pin connector `<9.0`
+- `use_pure=True` in connection params — MySQL 5.7 server, pin connector `==8.0.33`
+  (8.4+ and 9.x both dropped `mysql_native_password` support)
 - Secrets in `secrets/` via Doppler — never `.env`, never hardcoded
