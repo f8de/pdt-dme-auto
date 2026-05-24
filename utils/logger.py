@@ -8,7 +8,7 @@ from datetime import datetime
 
 _FMT     = "[%(asctime)s] %(levelname)-8s  %(name)-10s  %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
-_KEEP_DAYS = 30
+_KEEP_DAYS = 7
 
 
 def _log_dir() -> str:

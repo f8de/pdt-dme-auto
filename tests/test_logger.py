@@ -48,7 +48,7 @@ def test_logger_purges_old_log_files():
     with tempfile.TemporaryDirectory() as tmpdir:
         old = Path(tmpdir) / "dme-auto-2020-01-01.log"
         old.write_text("stale")
-        old_mtime = time.time() - (31 * 86400)
+        old_mtime = time.time() - (8 * 86400)
         os.utime(old, (old_mtime, old_mtime))
         logger = _fresh_logger("test_purge", tmpdir)
         try:
