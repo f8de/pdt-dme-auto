@@ -294,7 +294,7 @@ def insert_insurance_company(name: str, dry_run: bool = False) -> int | None:
 
 
 _INS_TYPE_MAP = {
-    "MEDICARE": "MP",
+    "MEDICARE": "13",  # "13" = Medicare per DMEworks UI observation
     "MEDICAID": "OT",
     "MEDIGAP": "LT",
     "SUPPLEMENTAL": "SP",
@@ -390,12 +390,17 @@ def insert_patient(patient: dict, insurance_map: dict, dry_run: bool = False) ->
         ))
         customer_id = cur.lastrowid
 
+        # InsuranceType "13" = Medicare (per DMEworks UI observation).
+        # Subscriber fields populated for completeness; subscriber is the patient for Rank=1/self.
         cur.execute("""
             INSERT INTO tbl_customer_insurance
                 (CustomerID, InsuranceCompanyID, InsuranceType,
-                 PolicyNumber, Rank, RelationshipCode, LastUpdateUserID)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (customer_id, ins_id, "MP", mbi, 1, "18", 10))
+                 PolicyNumber, Rank, RelationshipCode, LastUpdateUserID,
+                 FirstName, LastName, DateofBirth, Gender)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (customer_id, ins_id, "13", mbi, 1, "18", 10,
+              patient.get("first", ""), patient.get("last", ""),
+              dob, patient.get("gender") or "Male"))
 
         sec = patient.get("secondary")
         if sec:
@@ -411,9 +416,12 @@ def insert_patient(patient: dict, insurance_map: dict, dry_run: bool = False) ->
             cur.execute("""
                 INSERT INTO tbl_customer_insurance
                     (CustomerID, InsuranceCompanyID, InsuranceType,
-                     PolicyNumber, Rank, RelationshipCode, LastUpdateUserID)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (customer_id, sec_ins_id, sec_ins_type, sec["policy"], 2, "18", 10))
+                     PolicyNumber, Rank, RelationshipCode, LastUpdateUserID,
+                     FirstName, LastName, DateofBirth, Gender)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (customer_id, sec_ins_id, sec_ins_type, sec["policy"], 2, "18", 10,
+                  patient.get("first", ""), patient.get("last", ""),
+                  dob, patient.get("gender") or "Male"))
 
         notes = patient.get("notes", "")
         if notes:

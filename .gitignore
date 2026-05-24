@@ -10,3 +10,5 @@ build/
 deploy/
 *.spec.bak
 .pytest_cache/
+db_dump.txt
+version_info.txt
