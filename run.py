@@ -105,6 +105,24 @@ def _launch(mode: str, extra_args: list[str]) -> None:
         subprocess.run([sys.executable, script_map[mode]] + extra_args)
 
 
+# ── single-keypress input ────────────────────────────────────────────────────
+
+def _read_key(prompt: str = "  > ") -> str:
+    """Read one keypress without requiring Enter (Windows msvcrt; fallback: readline)."""
+    print(prompt, end="", flush=True)
+    try:
+        import msvcrt
+        while True:
+            ch = msvcrt.getwch()
+            if ch in ("\x00", "\xe0"):
+                msvcrt.getwch()   # consume second byte of function/arrow key
+                continue
+            print(ch)
+            return ch.lower()
+    except ImportError:
+        return input().strip().lower()
+
+
 # ── prereq check ─────────────────────────────────────────────────────────────
 
 def check_prereqs() -> list[tuple[str, bool, str]]:
@@ -112,6 +130,16 @@ def check_prereqs() -> list[tuple[str, bool, str]]:
 
     v  = sys.version_info
     results.append(("Python >= 3.8", v >= (3, 8), f"{v.major}.{v.minor}.{v.micro}"))
+
+    try:
+        from utils.db import build_config
+        import mysql.connector
+        cfg  = build_config()
+        conn = mysql.connector.connect(**cfg)
+        conn.close()
+        results.append(("SQL connection", True, f"{cfg['host']}:{cfg['port']}"))
+    except Exception as _e:
+        results.append(("SQL connection", False, f"failed: {type(_e).__name__}: {_e}"))
 
     pywinauto_ok = False
     try:
@@ -256,7 +284,7 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
 
     while True:
         try:
-            choice = input("  > ").strip().lower()
+            choice = _read_key()
         except (KeyboardInterrupt, EOFError):
             print()
             return
@@ -347,7 +375,7 @@ def main() -> None:
 
     while True:
         try:
-            choice = input("  > ").strip().lower()
+            choice = _read_key()
         except (KeyboardInterrupt, EOFError):
             print()
             sys.exit(0)
