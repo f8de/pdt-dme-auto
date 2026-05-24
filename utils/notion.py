@@ -208,23 +208,30 @@ def _parse_patient(token: str, page: dict) -> dict | None:
         except json.JSONDecodeError:
             secondary = None
 
+    gender_sel = (props.get("Gender", {}).get("select") or {})
+    gender     = gender_sel.get("name", "")
+
     return {
-        "first":    first,
-        "last":     last,
-        "mi":       rt("MI"),
-        "suffix":   rt("Suffix"),
-        "dob":      date_to_mdy("DOB"),
-        "mbi":      mbi,
-        "address1": rt("Address"),
-        "address2": rt("Address 2"),
-        "city":     rt("City"),
-        "state":    rt("State"),
-        "zip":      rt("ZIP"),
-        "phone":    phone("Phone"),
-        "doctor":   doc_name,
-        "icd10":    icd10,
-        "secondary": secondary,
-        "notes":    rt("Notes"),
+        "first":      first,
+        "last":       last,
+        "mi":         rt("MI"),
+        "suffix":     rt("Suffix"),
+        "dob":        date_to_mdy("DOB"),
+        "mbi":        mbi,
+        "address1":   rt("Address"),
+        "address2":   rt("Address 2"),
+        "city":       rt("City"),
+        "state":      rt("State"),
+        "zip":        rt("ZIP"),
+        "phone":      phone("Phone"),
+        "gender":     gender,
+        "height":     rt("Height"),
+        "weight":     rt("Weight"),
+        "waist_size": rt("Waist Size"),
+        "doctor":     doc_name,
+        "icd10":      icd10,
+        "secondary":  secondary,
+        "notes":      rt("Notes"),
         "_notion_page_id": page["id"],
         "_notion_url":     page["url"],
         "_doctor":         doc,
@@ -251,10 +258,15 @@ def _parse_doctor_page(page: dict) -> dict | None:
     if not first or not last:
         return None
 
+    courtesy_sel = (props.get("Courtesy", {}).get("select") or {})
     return {
         "first":    first,
         "last":     last,
+        "mi":       rt("MI"),
+        "suffix":   rt("Suffix"),
+        "courtesy": courtesy_sel.get("name", "Dr."),
         "npi":      rt("NPI"),
+        "fax":      phone_val("Fax"),
         "address1": rt("Address"),
         "address2": rt("Address 2"),
         "city":     rt("City"),
@@ -279,12 +291,15 @@ def _fetch_doctor(token: str, page_id: str) -> dict:
     def phone(key: str) -> str:
         return (props.get(key, {}).get("phone_number") or "").strip()
 
+    courtesy_sel = (props.get("Courtesy", {}).get("select") or {})
     result = {
         "first":    rt("First Name"),
         "last":     rt("Last Name"),
-        "mi":       "",
-        "suffix":   "",
+        "mi":       rt("MI"),
+        "suffix":   rt("Suffix"),
+        "courtesy": courtesy_sel.get("name", "Dr."),
         "npi":      rt("NPI"),
+        "fax":      phone("Fax"),
         "address1": rt("Address"),
         "address2": rt("Address 2"),
         "city":     rt("City"),
