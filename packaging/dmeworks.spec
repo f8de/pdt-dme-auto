@@ -44,6 +44,7 @@ def _safe_collect_all(pkg):
 
 pw_d, pw_b, pw_h = _safe_collect_all("pywinauto")
 ct_d, ct_b, ct_h = _safe_collect_all("comtypes")
+mc_h = collect_submodules("mysql.connector")
 
 # pywin32: not a standard pip dist — collect submodules + explicit DLLs.
 # Exclude win32comext (shell/taskscheduler) — not used by pywinauto UIA.
@@ -67,11 +68,7 @@ a = Analysis(
         (os.path.join(ROOT, "config", "database_reference.json"), "config"),
         (os.path.join(ROOT, "config", "clients.json"), "config"),
     ],
-    hiddenimports=pw_h + ct_h + w32_h + [
-        "mysql.connector",
-        "mysql.connector.locales",
-        "mysql.connector.locales.eng",
-        "mysql.connector.authentication",
+    hiddenimports=pw_h + ct_h + w32_h + mc_h + [
         "requests",
         "requests.adapters",
         "urllib3",
