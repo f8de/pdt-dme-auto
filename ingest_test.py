@@ -21,16 +21,16 @@ _TEST_NPI = "9999999999"
 _TEST_MBI = "1AA0AA0AA11"
 
 _TEST_DOCTOR = {
-    "first": "Test", "last": "Doctor", "mi": "T", "suffix": "", "courtesy": "Dr.",
-    "npi": _TEST_NPI, "fax": "", "address1": "1 Test Ave", "address2": "",
-    "city": "Trenton", "state": "NJ", "zip": "08610", "phone": "",
+    "first": "Test", "last": "Doctor", "mi": "T", "suffix": "Jr.", "courtesy": "Dr.",
+    "npi": _TEST_NPI, "fax": "6095550001", "address1": "1 Test Ave", "address2": "Suite 100",
+    "city": "Trenton", "state": "NJ", "zip": "08610", "phone": "6095550000",
 }
 
 _TEST_PATIENT = {
-    "first": "Test", "last": "Patient", "mi": "T", "suffix": "",
+    "first": "Test", "last": "Patient", "mi": "T", "suffix": "Jr.",
     "dob": "01/01/1980", "mbi": _TEST_MBI,
-    "address1": "1 Test Ave", "address2": "", "city": "Trenton",
-    "state": "NJ", "zip": "08610", "phone": "",
+    "address1": "1 Test Ave", "address2": "Apt 2B", "city": "Trenton",
+    "state": "NJ", "zip": "08610", "phone": "6095550002",
     "gender": "Male", "height": "70", "weight": "160",
     "icd10": ["M54.5"],
     "secondary": None,
@@ -118,6 +118,48 @@ def run() -> None:
     # Field-level verification
     log.info("")
     log.info("Verifying inserted data...")
+
+    # Doctor verification
+    doc_row = db.verify_doctor(_TEST_NPI)
+    if not doc_row:
+        log.error("FAIL: doctor NPI %s not found in tbl_doctor after insert", _TEST_NPI)
+        sys.exit(1)
+
+    doc_issues: list[str] = []
+    _dchk = [
+        ("FirstName",  "first",    True),
+        ("LastName",   "last",     True),
+        ("MiddleName", "mi",       True),
+        ("Suffix",     "suffix",   False),
+        ("Courtesy",   "courtesy", False),
+        ("NPI",        "npi",      False),
+        ("Address1",   "address1", True),
+        ("Address2",   "address2", True),
+        ("City",       "city",     True),
+        ("State",      "state",    False),
+        ("Zip",        "zip",      False),
+        ("Phone",      "phone",    False),
+        ("Fax",        "fax",      False),
+    ]
+    for db_col, src_key, case_insensitive in _dchk:
+        got = (doc_row.get(db_col) or "").strip()
+        want = (_TEST_DOCTOR.get(src_key) or "")
+        if case_insensitive:
+            match = got.lower() == want.lower()
+        else:
+            match = got == want
+        if not match:
+            doc_issues.append(f"{db_col}: expected '{want}', got '{got}'")
+
+    if doc_issues:
+        log.error("Doctor FAIL — field mismatches:")
+        for iss in doc_issues:
+            log.error("  %s", iss)
+        sys.exit(1)
+
+    log.info("  Doctor verified: NPI=%s %s %s", _TEST_NPI, _TEST_DOCTOR["first"], _TEST_DOCTOR["last"])
+
+    # Patient verification
     rows = db.verify_patients([_TEST_PATIENT])
     row = rows.get(_TEST_MBI)
     if not row:
@@ -125,19 +167,40 @@ def run() -> None:
         sys.exit(1)
 
     issues: list[str] = []
-    if row["first"].strip().lower() != _TEST_PATIENT["first"].lower():
-        issues.append(f"FirstName: expected '{_TEST_PATIENT['first']}', got '{row['first']}'")
-    if row["last"].strip().lower() != _TEST_PATIENT["last"].lower():
-        issues.append(f"LastName: expected '{_TEST_PATIENT['last']}', got '{row['last']}'")
-    if (row.get("gender") or "").strip() != _TEST_PATIENT["gender"]:
-        issues.append(f"Gender: expected '{_TEST_PATIENT['gender']}', got '{row.get('gender')}'")
+
+    _pchk = [
+        ("first",    "first",    True),
+        ("last",     "last",     True),
+        ("mi",       "mi",       True),
+        ("suffix",   "suffix",   False),
+        ("address1", "address1", True),
+        ("address2", "address2", True),
+        ("city",     "city",     True),
+        ("state",    "state",    False),
+        ("zip",      "zip",      False),
+        ("phone",    "phone",    False),
+        ("gender",   "gender",   False),
+    ]
+    for row_key, src_key, ci in _pchk:
+        got = (row.get(row_key) or "").strip()
+        want = (_TEST_PATIENT.get(src_key) or "")
+        match = got.lower() == want.lower() if ci else got == want
+        if not match:
+            issues.append(f"{row_key}: expected '{want}', got '{got}'")
+
+    for metric, key in [("height", "height"), ("weight", "weight")]:
+        got_val = row.get(metric)
+        want_val = float(_TEST_PATIENT[key]) if _TEST_PATIENT.get(key) else None
+        if got_val != want_val:
+            issues.append(f"{metric}: expected '{want_val}', got '{got_val}'")
+
     if not row.get("doctor_npi"):
         issues.append("Doctor1_ID not assigned (doctor_npi is NULL)")
 
     dob_db = row.get("dob")
     dob_str = dob_db.strftime("%m/%d/%Y") if hasattr(dob_db, "strftime") else str(dob_db)
     if dob_str != _TEST_PATIENT["dob"]:
-        issues.append(f"DOB: expected '{_TEST_PATIENT['dob']}', got '{dob_str}'")
+        issues.append(f"dob: expected '{_TEST_PATIENT['dob']}', got '{dob_str}'")
 
     db_codes = {row.get(f"icd10_{i:02d}") for i in range(1, 13) if row.get(f"icd10_{i:02d}")}
     for code in _TEST_PATIENT["icd10"]:

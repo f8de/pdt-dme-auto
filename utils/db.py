@@ -105,6 +105,22 @@ def fetch_matching_mbis(mbis: list[str]) -> set[str]:
 
 # ─── VERIFICATION ─────────────────────────────────────────────────────────────
 
+def verify_doctor(npi: str) -> dict | None:
+    """Return tbl_doctor row for given NPI, or None if not found."""
+    conn = _connect()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT FirstName, LastName, MiddleName, Suffix, Courtesy, NPI, "
+            "Address1, Address2, City, State, Zip, Phone, Fax "
+            "FROM dmeworks.tbl_doctor WHERE NPI = %s",
+            (npi,),
+        )
+        return cur.fetchone()
+    finally:
+        conn.close()
+
+
 def verify_patients(patients: list[dict]) -> dict[str, dict]:
     """
     Deep verification: joins customer + primary insurance + doctor.
@@ -122,11 +138,15 @@ def verify_patients(patients: list[dict]) -> dict[str, dict]:
                 ci.PolicyNumber  AS mbi,
                 c.FirstName      AS first,
                 c.LastName       AS last,
+                c.MiddleName     AS mi,
+                c.Suffix         AS suffix,
                 c.DateofBirth    AS dob,
                 c.Address1       AS address1,
+                c.Address2       AS address2,
                 c.City           AS city,
                 c.State          AS state,
                 c.Zip            AS zip,
+                c.Phone          AS phone,
                 c.Gender         AS gender,
                 c.Height         AS height,
                 c.Weight         AS weight,
