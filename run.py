@@ -235,6 +235,49 @@ def _launch_dmeworks() -> bool:
     return False
 
 
+# ── tools submenu ────────────────────────────────────────────────────────────
+
+def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
+    tools_ok = dmeworks_ok and pywinauto_ok
+    print()
+    print("=" * 60)
+    print("  Tools  (DMEWorks must be open)")
+    print("=" * 60)
+    print()
+    if not tools_ok:
+        print("  [!]  DMEWorks is not running — these tools require it.")
+        print()
+    print("  [1]  Map policy dialog       —  maps Policy Information controls")
+    print("  [2]  Map insurance company   —  maps Insurance Company form controls")
+    print("  [3]  Grid probe              —  probes DataGridView cell reading")
+    print()
+    print("  [B]  Back")
+    print()
+
+    while True:
+        try:
+            choice = input("  > ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return
+
+        if choice == "b":
+            return
+        elif choice in ("1", "2", "3") and not tools_ok:
+            print("  DMEWorks must be open to use these tools.")
+        elif choice == "1":
+            _launch("map_policy", [])
+            return
+        elif choice == "2":
+            _launch("map_insurance", [])
+            return
+        elif choice == "3":
+            _launch("grid_probe", [])
+            return
+        else:
+            print("  Enter 1, 2, 3, or B.")
+
+
 # ── main menu ─────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -291,24 +334,20 @@ def main() -> None:
         print("  All checks passed.")
     print()
 
-    print("  Entry  (DMEWorks NOT required)")
+    print("  Entry  (DMEWorks not required)")
     print("  [1]  Test entry   —  dry-run against test client (c01)")
-    print("  [2]  Full entry   —  Allied (prompts: dry-run or live)")
+    print("  [2]  Full entry   —  Allied")
     print()
     print("  Verification")
-    print("  [3]  Verify & correct  —  compare Notion vs DMEworks, fix mismatches")
+    print("  [3]  Verify       —  compare Notion vs DMEworks")
     print()
-    print("  Utilities  (DMEWorks must be open, target screen loaded)")
-    print("  [4]  Map policy dialog       —  maps Policy Information controls")
-    print("  [5]  Map insurance company   —  maps Insurance Company form controls")
-    print("  [6]  Grid probe              —  probes DataGridView cell reading")
-    print()
+    print("  [T]  Tools        —  diagnostic utilities")
     print("  [0]  Exit")
     print()
 
     while True:
         try:
-            choice = input("  > ").strip()
+            choice = input("  > ").strip().lower()
         except (KeyboardInterrupt, EOFError):
             print()
             sys.exit(0)
@@ -316,12 +355,10 @@ def main() -> None:
         if choice == "0":
             print()
             sys.exit(0)
-        elif choice in ("4", "5", "6") and not (dmeworks_ok and pywinauto_ok):
-            print("  That option requires DMEWorks to be running.")
-        elif choice in ("1", "2", "3", "4", "5", "6"):
+        elif choice in ("1", "2", "3", "t"):
             break
         else:
-            print("  Enter 0-6.")
+            print("  Enter 1, 2, 3, T, or 0.")
 
     try:
         if choice == "1":
@@ -343,14 +380,8 @@ def main() -> None:
             args = ["--dry-run"] if dry == "y" else []
             _launch("verify", args)
 
-        elif choice == "4":
-            _launch("map_policy", [])
-
-        elif choice == "5":
-            _launch("map_insurance", [])
-
-        elif choice == "6":
-            _launch("grid_probe", [])
+        elif choice == "t":
+            _tools_menu(dmeworks_ok, pywinauto_ok)
 
     except (KeyboardInterrupt, EOFError):
         print()
