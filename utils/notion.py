@@ -169,6 +169,10 @@ def _parse_patient(token: str, page: dict) -> dict | None:
     def phone(key: str) -> str:
         return (props.get(key, {}).get("phone_number") or "").strip()
 
+    def num(key: str) -> str:
+        v = props.get(key, {}).get("number")
+        return str(v) if v is not None else ""
+
     def date_to_mdy(key: str) -> str:
         d = props.get(key, {}).get("date") or {}
         start = d.get("start", "")
@@ -225,8 +229,8 @@ def _parse_patient(token: str, page: dict) -> dict | None:
         "zip":        rt("ZIP"),
         "phone":      phone("Phone"),
         "gender":     gender,
-        "height":     rt("Height"),
-        "weight":     rt("Weight"),
+        "height":     rt("Height") or num("Height"),
+        "weight":     rt("Weight") or num("Weight"),
         "waist_size": rt("Waist Size"),
         "doctor":     doc_name,
         "icd10":      icd10,

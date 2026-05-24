@@ -302,6 +302,26 @@ def test_fetch_insurance_map_builds_state_dict():
     assert result["OH"] == "Medicare Region B DMERC"
 
 
+def test_parse_patient_height_weight_as_number_type():
+    import utils.notion as n
+    page = _sample_patient_page(height="", weight="")
+    page["properties"]["Height"] = {"number": 68}
+    page["properties"]["Weight"] = {"number": 175}
+    with patch("utils.notion._fetch_doctor", return_value={"first": "J", "last": "S", "mi": "", "suffix": "", "npi": "1", "address1": "", "city": "", "state": "", "zip": "", "phone": ""}):
+        result = n._parse_patient("t", page)
+    assert result["height"] == "68"
+    assert result["weight"] == "175"
+
+
+def test_parse_patient_height_weight_rich_text_takes_priority():
+    import utils.notion as n
+    page = _sample_patient_page(height="70", weight="160")
+    with patch("utils.notion._fetch_doctor", return_value={"first": "J", "last": "S", "mi": "", "suffix": "", "npi": "1", "address1": "", "city": "", "state": "", "zip": "", "phone": ""}):
+        result = n._parse_patient("t", page)
+    assert result["height"] == "70"
+    assert result["weight"] == "160"
+
+
 def test_fetch_insurance_map_returns_empty_when_none_active():
     import utils.notion as n
     mock_resp = MagicMock()

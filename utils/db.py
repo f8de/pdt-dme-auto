@@ -384,7 +384,7 @@ def insert_patient(patient: dict, insurance_map: dict, dry_run: bool = False) ->
             patient.get("city", ""), patient.get("state", ""),
             patient.get("zip", ""), patient.get("phone", ""),
             doctor_id, 12, "No", "", "",
-            patient.get("gender", "Male"), height, weight,
+            patient.get("gender") or "Male", height, weight,
             *icd10_vals,
             _date2.today(), 10,
         ))
