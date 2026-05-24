@@ -26,8 +26,8 @@ def _relation(page_id):
     return {"relation": [{"id": page_id}]}
 
 
-def _select(name):
-    return {"select": {"name": name}}
+def _select(name: str) -> dict:
+    return {"select": {"name": name} if name else None}
 
 
 def _sample_patient_page(
@@ -48,6 +48,10 @@ def _sample_patient_page(
     notes="",
     page_id="patient-page-uuid",
     page_url="https://www.notion.so/patient-page-uuid",
+    gender="Male",
+    height="65",
+    weight="150",
+    waist_size="",
 ):
     props = {
         "Patient Name": _title(f"{first} {last}"),
@@ -67,6 +71,10 @@ def _sample_patient_page(
         "Secondary Insurance": _rt(json.dumps(secondary) if secondary else ""),
         "Notes":        _rt(notes),
         "Status":       _select("To Enter in DMEworks"),
+        "Gender":       _select(gender),
+        "Height":       _rt(height),
+        "Weight":       _rt(weight),
+        "Waist Size":   _rt(waist_size),
     }
     return {"id": page_id, "url": page_url, "properties": props}
 
@@ -80,6 +88,10 @@ def _sample_doctor_response(
     state="IL",
     zip_="60601",
     phone="3125550100",
+    mi="",
+    suffix="",
+    courtesy="Dr.",
+    fax="",
 ):
     return {
         "properties": {
@@ -92,6 +104,10 @@ def _sample_doctor_response(
             "State":       _rt(state),
             "ZIP":         _rt(zip_),
             "Phone":       _phone(phone),
+            "MI":          _rt(mi),
+            "Suffix":      _rt(suffix),
+            "Courtesy":    _select(courtesy),
+            "Fax":         {"phone_number": fax or None},
         }
     }
 
@@ -104,6 +120,7 @@ def test_parse_patient_basic_fields():
 
     with patch("utils.notion._fetch_doctor", return_value={
         "first": "John", "last": "Smith", "mi": "", "suffix": "",
+        "courtesy": "Dr.", "fax": "",
         "npi": "1234567890", "address1": "456 Oak Ave",
         "city": "Chicago", "state": "IL", "zip": "60601", "phone": "3125550100",
     }):
@@ -120,6 +137,10 @@ def test_parse_patient_basic_fields():
     assert result["zip"] == "62701"
     assert result["_notion_page_id"] == "patient-page-uuid"
     assert result["_notion_url"] == "https://www.notion.so/patient-page-uuid"
+    assert result["gender"] == "Male"
+    assert result["height"] == "65"
+    assert result["weight"] == "150"
+    assert result["waist_size"] == ""
 
 
 def test_parse_patient_dob_format():
@@ -177,6 +198,7 @@ def test_parse_patient_doctor_name_in_result():
     page = _sample_patient_page()
     with patch("utils.notion._fetch_doctor", return_value={
         "first": "John", "last": "Smith", "mi": "", "suffix": "",
+        "courtesy": "Dr.", "fax": "",
         "npi": "1234567890", "address1": "", "city": "", "state": "", "zip": "", "phone": "",
     }):
         result = n._parse_patient("t", page)
@@ -187,7 +209,10 @@ def test_parse_patient_doctor_name_in_result():
 def test_fetch_doctor_parses_fields():
     import utils.notion as n
     mock_resp = MagicMock()
-    mock_resp.json.return_value = _sample_doctor_response()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = _sample_doctor_response(
+        mi="A", suffix="MD", courtesy="Dr.", fax="3125559999"
+    )
     mock_resp.raise_for_status = MagicMock()
     with patch("requests.get", return_value=mock_resp):
         result = n._fetch_doctor("fake-token", "doctor-uuid")
@@ -196,6 +221,10 @@ def test_fetch_doctor_parses_fields():
     assert result["npi"] == "1234567890"
     assert result["city"] == "Chicago"
     assert result["phone"] == "3125550100"
+    assert result["mi"] == "A"
+    assert result["suffix"] == "MD"
+    assert result["courtesy"] == "Dr."
+    assert result["fax"] == "3125559999"
 
 
 def test_parse_patient_no_doctor_relation():
@@ -216,10 +245,12 @@ def test_fetch_work_queue_paginates_and_returns_all():
     page2 = _sample_patient_page(page_id="p2", mbi="BBB0002", first="Bob", last="Jones")
 
     resp1 = MagicMock()
+    resp1.status_code = 200
     resp1.raise_for_status = MagicMock()
     resp1.json.return_value = {"results": [page1], "has_more": True, "next_cursor": "cursor-abc"}
 
     resp2 = MagicMock()
+    resp2.status_code = 200
     resp2.raise_for_status = MagicMock()
     resp2.json.return_value = {"results": [page2], "has_more": False}
 
@@ -240,6 +271,7 @@ def test_fetch_work_queue_paginates_and_returns_all():
 def test_mark_in_dmeworks_calls_patch():
     import utils.notion as n
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     with patch("requests.patch", return_value=mock_resp) as mock_patch:
         n.mark_in_dmeworks("fake-token", "patient-page-id")
@@ -252,6 +284,7 @@ def test_mark_in_dmeworks_calls_patch():
 def test_fetch_insurance_map_builds_state_dict():
     import utils.notion as n
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     mock_resp.json.return_value = {
         "results": [
@@ -272,6 +305,7 @@ def test_fetch_insurance_map_builds_state_dict():
 def test_fetch_insurance_map_returns_empty_when_none_active():
     import utils.notion as n
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     mock_resp.json.return_value = {"results": [], "has_more": False}
     with patch("requests.post", return_value=mock_resp):
