@@ -81,16 +81,19 @@ VSVersionInfo(
 """, encoding="utf-8")
 
 
-def build_exe(version: str) -> None:
+def build_exe(version: str, verbose: bool = False) -> None:
     write_version_info(version)
     print("\n[1/2] Building EXE via PyInstaller...")
-    result = subprocess.run(
-        [sys.executable, "-m", "PyInstaller", "--noconfirm", str(SPEC_FILE)],
-        cwd=ROOT, capture_output=True, text=True
-    )
+    cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", str(SPEC_FILE)]
+    if verbose:
+        cmd += ["--log-level", "DEBUG"]
+        result = subprocess.run(cmd, cwd=ROOT)
+    else:
+        result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     if result.returncode != 0:
-        print(result.stdout[-3000:])
-        print(result.stderr[-2000:])
+        if not verbose:
+            print(result.stdout[-3000:])
+            print(result.stderr[-2000:])
         sys.exit(1)
     size_mb = EXE_OUT.stat().st_size / 1_048_576
     print(f"      {EXE_OUT.name}  ({size_mb:.1f} MB)")
@@ -115,6 +118,8 @@ def main() -> None:
                         help="Bump version before building")
     parser.add_argument("--no-package", action="store_true",
                         help="Build EXE but skip deployment packaging")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Stream PyInstaller output live (DEBUG log level)")
     args = parser.parse_args()
 
     version = bump_version(args.bump) if args.bump else read_version()
@@ -123,7 +128,7 @@ def main() -> None:
     print(f"  DME Auto  v{version}")
     print("=" * 50)
 
-    build_exe(version)
+    build_exe(version, verbose=args.verbose)
 
     if not args.no_package:
         package(version)

@@ -9,6 +9,7 @@ cd /d "%~dp0"
 :: build.bat minor             Bump minor then build
 :: build.bat major             Bump major then build
 :: build.bat --no-package      Build EXE, skip deploy packaging
+:: build.bat --verbose         Stream PyInstaller output live
 :: build.bat patch --no-package
 
 set BUMP=
@@ -19,7 +20,9 @@ if "%~1"=="" goto run
 if /i "%~1"=="patch" set BUMP=--bump patch & shift & goto parse
 if /i "%~1"=="minor" set BUMP=--bump minor & shift & goto parse
 if /i "%~1"=="major" set BUMP=--bump major & shift & goto parse
-if /i "%~1"=="--no-package" set EXTRA_FLAGS=--no-package & shift & goto parse
+if /i "%~1"=="--no-package" set EXTRA_FLAGS=%EXTRA_FLAGS% --no-package & shift & goto parse
+if /i "%~1"=="--verbose" set EXTRA_FLAGS=%EXTRA_FLAGS% --verbose & shift & goto parse
+if /i "%~1"=="-v" set EXTRA_FLAGS=%EXTRA_FLAGS% --verbose & shift & goto parse
 shift & goto parse
 
 :run
