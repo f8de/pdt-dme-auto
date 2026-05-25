@@ -477,7 +477,20 @@ def create_customer(p, main_win, a):
         set_field(dlg, "txtState",    p["state"])
         set_field(dlg, "txtZip",      p["zip"])
         set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
-        log.info("    General: %s, %s %s | DOB %s", p["city"], p["state"], p["zip"], mask_dob(p["dob"]))
+
+        gender_val = p.get("gender") or "Male"
+        try:
+            dlg.child_window(auto_id="cmbGender", found_index=0).select(gender_val)
+            time.sleep(0.3)
+        except Exception as e:
+            log.warning("    [warn] Gender not set: %s", e)
+
+        set_field(dlg, "txtHeight", p.get("height", ""))
+        set_field(dlg, "txtWeight", p.get("weight", ""))
+
+        log.info("    General: %s, %s %s | DOB %s | gender=%s h=%s w=%s",
+                 p["city"], p["state"], p["zip"], mask_dob(p["dob"]),
+                 gender_val, p.get("height", ""), p.get("weight", ""))
 
         click_inner_tab(dlg, "Contacts")
         contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
@@ -663,6 +676,37 @@ def run_verification():
         for code in p.get("icd10", []):
             if code not in db_codes:
                 issues.append(f"ICD10 '{code}' missing in DB")
+
+        def _s(v):
+            return (v or "").strip()
+
+        if _s(row.get("mi")).lower() != _s(p.get("mi")).lower():
+            issues.append(f"MI DB='{_s(row.get('mi'))}' expected='{_s(p.get('mi'))}'")
+        if _s(row.get("suffix")).lower() != _s(p.get("suffix")).lower():
+            issues.append(f"Suffix DB='{_s(row.get('suffix'))}' expected='{_s(p.get('suffix'))}'")
+        if _s(row.get("address1")).lower() != _s(p.get("address1")).lower():
+            issues.append("Address1 mismatch")
+        if _s(row.get("city")).lower() != _s(p.get("city")).lower():
+            issues.append("City mismatch")
+        if _s(row.get("zip")) != _s(p.get("zip")):
+            issues.append(f"ZIP DB='{_s(row.get('zip'))}' expected='{_s(p.get('zip'))}'")
+
+        db_digits     = "".join(c for c in _s(row.get("phone")) if c.isdigit())
+        notion_digits = "".join(c for c in _s(p.get("phone")) if c.isdigit())
+        if db_digits != notion_digits:
+            issues.append(f"Phone DB='{db_digits}' expected='{notion_digits}'")
+
+        for field in ("height", "weight"):
+            db_val     = row.get(field)
+            notion_val = p.get(field, "")
+            if db_val is None and not notion_val:
+                pass
+            else:
+                try:
+                    if round(float(db_val or 0), 1) != round(float(notion_val or 0), 1):
+                        issues.append(f"{field.title()} DB='{db_val}' expected='{notion_val}'")
+                except (ValueError, TypeError):
+                    issues.append(f"{field.title()} comparison failed (DB='{db_val}' Notion='{notion_val}')")
 
         if issues:
             for issue in issues:
