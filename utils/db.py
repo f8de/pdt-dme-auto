@@ -192,6 +192,45 @@ def verify_patient_notes(customer_id: int) -> list[dict]:
         conn.close()
 
 
+def write_patient_notes(mbi: str, notes: str) -> bool:
+    """
+    Write notes to tbl_customer_notes for the patient with the given MBI.
+    Skips if notes already exist. Returns True if written.
+    """
+    if not notes:
+        return False
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT ci.CustomerID FROM tbl_customer_insurance ci "
+            "WHERE ci.PolicyNumber = %s AND ci.Rank = 1 AND ci.InactiveDate IS NULL",
+            (mbi,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        customer_id = row[0]
+        cur.execute(
+            "SELECT COUNT(*) FROM tbl_customer_notes WHERE CustomerID = %s",
+            (customer_id,),
+        )
+        if cur.fetchone()[0] > 0:
+            return False
+        cur.execute(
+            """
+            INSERT INTO tbl_customer_notes
+                (CustomerID, Notes, Active, LastUpdateUserID, CreatedBy, CreatedAt)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            """,
+            (customer_id, notes, 1, 10, 10),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
 def validate_icd10_codes(codes: list[str]) -> set[str]:
     """Return subset of codes that are NOT valid in dmeworks.tbl_icd10 (missing, header, or retired)."""
     if not codes:

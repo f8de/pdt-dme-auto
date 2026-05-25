@@ -25,10 +25,14 @@ from utils.logger import get_logger, mask_mbi, mask_dob
 log = get_logger()
 
 
+_PAUSED = True  # Direct SQL ingest paused — use entry_all.py for production entry
+
+
 def _parse_args():
     p = argparse.ArgumentParser(description="DMEworks patient ingest — direct DB writes")
     p.add_argument("--live",   action="store_true", help="Perform real DB writes (default: dry-run)")
     p.add_argument("--client", default="allied",    help="Client code (default: allied)")
+    p.add_argument("--force",  action="store_true", help="Override paused gate (testing only)")
     return p.parse_args()
 
 
@@ -43,6 +47,11 @@ def run() -> None:
     args    = _parse_args()
     dry_run = not args.live
     client  = args.client
+
+    if _PAUSED and not args.force:
+        print("ingest.py is PAUSED — use entry_all.py for production entry.")
+        print("All code is preserved. Re-enable with --force once validated against c01.")
+        sys.exit(0)
 
     clients = _load_clients()
     if client not in clients:
