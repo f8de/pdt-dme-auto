@@ -66,6 +66,12 @@ if _FROZEN and len(sys.argv) > 1 and sys.argv[1] == "--dispatch":
         elif mode == "db_audit":
             from tools.db_dump import main
             main()
+        elif mode == "entry_all":
+            import entry_all
+            entry_all.run()
+        elif mode == "map_customer_form":
+            from tools.map_customer_form import main
+            main()
     except SystemExit:
         raise
     except Exception:
@@ -104,7 +110,9 @@ def _launch(mode: str, extra_args: list[str]) -> None:
             "map_policy":   os.path.join(SCRIPT_DIR, "tools", "map_policy_dialog.py"),
             "map_insurance":os.path.join(SCRIPT_DIR, "tools", "map_insurance_company_tabs.py"),
             "grid_probe":   os.path.join(SCRIPT_DIR, "tools", "dmeworks_grid_probe.py"),
-            "db_audit":     os.path.join(SCRIPT_DIR, "tools", "db_dump.py"),
+            "db_audit":          os.path.join(SCRIPT_DIR, "tools", "db_dump.py"),
+            "entry_all":         os.path.join(SCRIPT_DIR, "entry_all.py"),
+            "map_customer_form": os.path.join(SCRIPT_DIR, "tools", "map_customer_form.py"),
         }
         subprocess.run([sys.executable, script_map[mode]] + extra_args)
 
@@ -283,6 +291,7 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
     print("  [2]  Map insurance company   —  maps Insurance Company form controls")
     print("  [3]  Grid probe              —  probes DataGridView cell reading")
     print("  [4]  DB Audit               —  dump all tables to tools/db_dump.txt")
+    print("  [5]  Map customer form       —  discover Customer form control IDs")
     print()
     print("  [B]  Back")
     print()
@@ -296,7 +305,7 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
 
         if choice == "b":
             return
-        elif choice in ("1", "2", "3") and not tools_ok:
+        elif choice in ("1", "2", "3", "5") and not tools_ok:
             print("  DMEWorks must be open to use these tools.")
         elif choice == "1":
             _launch("map_policy", [])
@@ -310,8 +319,11 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
         elif choice == "4":
             _launch("db_audit", [])
             return
+        elif choice == "5":
+            _launch("map_customer_form", [])
+            return
         else:
-            print("  Enter 1, 2, 3, 4, or B.")
+            print("  Enter 1, 2, 3, 4, 5, or B.")
 
 
 # ── main menu ─────────────────────────────────────────────────────────────────
@@ -381,9 +393,9 @@ def main() -> None:
         print("  All checks passed.")
     print()
 
-    print("  Entry  (DMEWorks not required)")
-    print("  [1]  Test entry   —  dry-run against test client (c01)")
-    print("  [2]  Full entry   —  Allied")
+    print("  Entry  (DMEWorks required)")
+    print("  [1]  UI field test  —  fill all forms in DMEWorks, no saves")
+    print("  [2]  Full entry     —  Allied")
     print()
     print("  Verification")
     print("  [3]  Verify       —  compare Notion vs DMEworks")
@@ -408,7 +420,10 @@ def main() -> None:
 
         try:
             if choice == "1":
-                _launch("ingest_test", [])
+                if not (dmeworks_ok and pywinauto_ok):
+                    print("  DMEWorks must be running for the UI field test.")
+                    continue
+                _launch("entry_all", ["--ui-test"])
 
             elif choice == "2":
                 try:

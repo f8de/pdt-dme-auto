@@ -36,10 +36,13 @@ def _parse_args():
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--setup", action="store_true",
                    help="Re-run Doppler token setup (overwrites saved token)")
+    p.add_argument("--ui-test", action="store_true",
+                   help="Fill all UI fields for first doctor/insurance/patient — no saves")
     return p.parse_args()
 
-ARGS    = _parse_args()
-DRY_RUN = ARGS.dry_run
+ARGS     = _parse_args()
+DRY_RUN  = ARGS.dry_run
+UI_TEST  = ARGS.ui_test
 
 # ─── SETUP MODE ───────────────────────────────────────────────────────────────
 
@@ -322,9 +325,12 @@ def create_doctor(doc, main_win, a):
         click_inner_tab(w, "Numbers")
         set_field(w, "txtNPI", doc["npi"])
 
-        toolbar_click(w, "Save")
-        dismiss_validation(get_app())
-        log.info("    [saved] %s", label)
+        if UI_TEST:
+            log.info("    [UI TEST] Fields filled — closing without saving")
+        else:
+            toolbar_click(w, "Save")
+            dismiss_validation(get_app())
+            log.info("    [saved] %s", label)
     except Exception:
         log.error("    Error creating doctor %s — closing window", label)
         try:
@@ -343,8 +349,12 @@ def ensure_all_doctors(a, main_win, existing_npis):
     log.info("=" * 52)
     log.info("DB check: %d/%d doctor(s) already exist", len(existing_npis), len(DOCTORS))
 
-    to_create = [d for d in DOCTORS if d["npi"] not in existing_npis]
-    to_skip   = [d for d in DOCTORS if d["npi"] in existing_npis]
+    if UI_TEST:
+        to_create = DOCTORS[:1]
+        to_skip   = []
+    else:
+        to_create = [d for d in DOCTORS if d["npi"] not in existing_npis]
+        to_skip   = [d for d in DOCTORS if d["npi"] in existing_npis]
 
     for doc in to_skip:
         log.info("  [SKIP]   NPI %s", doc["npi"])
@@ -380,9 +390,12 @@ def create_insurance_company(name, main_win, a):
         dismiss_save_dialog(get_app())
         w = find_mdi_child(main_win, "Insurance Company")
         set_field(w, "txtName", name)
-        toolbar_click(w, "Save")
-        dismiss_validation(get_app())
-        log.info("    [saved] %s", name)
+        if UI_TEST:
+            log.info("    [UI TEST] Fields filled — closing without saving")
+        else:
+            toolbar_click(w, "Save")
+            dismiss_validation(get_app())
+            log.info("    [saved] %s", name)
     except Exception:
         log.error("    Error creating insurance company %s — closing window", name)
         try:
@@ -402,15 +415,20 @@ def ensure_all_insurance_companies(a, main_win, existing_names):
     log.info("DB check: %d/%d company(s) already exist", len(existing_names), len(INSURANCE_COMPANIES))
 
     dismiss_popup(a)
-    for i, co in enumerate(INSURANCE_COMPANIES, 1):
+    if UI_TEST:
+        non_medicare = [c for c in INSURANCE_COMPANIES if c["type"] != "MEDICARE"]
+        companies = non_medicare[:1] if non_medicare else INSURANCE_COMPANIES[:1]
+    else:
+        companies = INSURANCE_COMPANIES
+    for i, co in enumerate(companies, 1):
         name = co["name"]
         is_medicare = co["type"] == "MEDICARE"
-        set_status(f"[2/3] Insurance {i}/{len(INSURANCE_COMPANIES)}: {name}")
+        set_status(f"[2/3] Insurance {i}/{len(companies)}: {name}")
 
-        if name.lower() in existing_names:
+        if not UI_TEST and name.lower() in existing_names:
             tag = "[OK]    " if is_medicare else "[SKIP]  "
             log.info("  %s %s", tag, name)
-        elif is_medicare:
+        elif not UI_TEST and is_medicare:
             log.error("  [ERROR]  '%s' — not found, must be created manually in DMEworks", name)
         else:
             log.info("  [CREATE] %s", name)
@@ -539,9 +557,12 @@ def create_customer(p, main_win, a):
             else:
                 log.error("    Policy Information dialog not found (secondary)")
 
-        toolbar_click(dlg, "Save")
-        dismiss_validation(get_app())
-        log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
+        if UI_TEST:
+            log.info("    [UI TEST] Fields filled — closing without saving")
+        else:
+            toolbar_click(dlg, "Save")
+            dismiss_validation(get_app())
+            log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
 
     except Exception:
         log.error("    Error mid-form for MBI %s — closing window", mask_mbi(p["mbi"]))
@@ -561,8 +582,12 @@ def ensure_all_customers(a, main_win, existing_mbis):
     log.info("=" * 52)
     log.info("DB check: %d/%d patient(s) already exist", len(existing_mbis), len(PATIENTS))
 
-    to_create = [p for p in PATIENTS if p["mbi"] not in existing_mbis]
-    to_skip   = [p for p in PATIENTS if p["mbi"] in existing_mbis]
+    if UI_TEST:
+        to_create = PATIENTS[:1]
+        to_skip   = []
+    else:
+        to_create = [p for p in PATIENTS if p["mbi"] not in existing_mbis]
+        to_skip   = [p for p in PATIENTS if p["mbi"] in existing_mbis]
 
     for p in to_skip:
         log.info("  [SKIP]   MBI %s", mask_mbi(p["mbi"]))
@@ -582,7 +607,7 @@ def ensure_all_customers(a, main_win, existing_mbis):
             continue
         try:
             create_customer(p, main_win, a)
-            if p.get("_notion_page_id"):
+            if p.get("_notion_page_id") and not UI_TEST:
                 try:
                     notion.mark_in_dmeworks(_token, p["_notion_page_id"])
                     log.info("    [notion] Status → In DMEworks")
@@ -725,6 +750,36 @@ def run_verification():
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
+    if UI_TEST:
+        log.info("*** UI TEST MODE — filling forms without saving ***")
+        set_status("UI Test — 1 doctor, 1 insurance, 1 patient")
+        log.info("=" * 52)
+        log.info("DMEworks UI Test — first record of each type")
+        log.info("=" * 52)
+
+        errors = validate_csv()
+        if errors:
+            log.warning("Validation warnings (continuing anyway in UI test):")
+            for err in errors:
+                log.warning("  %s", err)
+
+        log.info("")
+        log.info("Connecting to DMEworks...")
+        a, main_win = get_main()
+        log.info("Connected")
+        dismiss_popup(a)
+
+        ensure_all_doctors(a, main_win, set())
+        ensure_all_insurance_companies(a, main_win, set())
+        ensure_all_customers(a, main_win, set())
+
+        set_status("UI Test DONE — no records saved")
+        log.info("")
+        log.info("=" * 52)
+        log.info("UI TEST DONE — all forms filled, no records saved")
+        log.info("=" * 52)
+        return
+
     if DRY_RUN:
         log.info("*** DRY RUN MODE — no changes will be made to DMEworks ***")
 
