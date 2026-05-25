@@ -530,16 +530,6 @@ def create_customer(p, main_win, a):
         dismiss_validation(get_app())
         log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
 
-        if p.get("notes"):
-            try:
-                written = db.write_patient_notes(p["mbi"], p["notes"])
-                if written:
-                    log.info("    [notes] Written to tbl_customer_notes")
-                else:
-                    log.warning("    [notes] Already exists or patient not found yet")
-            except Exception as e:
-                log.warning("    [notes] Failed: %s", e)
-
     except Exception:
         log.error("    Error mid-form for MBI %s — closing window", mask_mbi(p["mbi"]))
         try:
@@ -673,17 +663,6 @@ def run_verification():
         for code in p.get("icd10", []):
             if code not in db_codes:
                 issues.append(f"ICD10 '{code}' missing in DB")
-
-        if p.get("notes"):
-            customer_id = row.get("customer_id")
-            if customer_id:
-                try:
-                    note_rows = db.verify_patient_notes(customer_id)
-                    note_texts = [r["Notes"] for r in note_rows]
-                    if p["notes"] not in note_texts:
-                        issues.append("notes not in tbl_customer_notes")
-                except Exception as e:
-                    issues.append(f"notes check failed: {e}")
 
         if issues:
             for issue in issues:
