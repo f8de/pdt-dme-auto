@@ -35,6 +35,14 @@ def _norm(v) -> str:
 def _norm_phone(p) -> str:
     return re.sub(r"\D", "", _norm(p))
 
+def _norm_num(v) -> str:
+    s = _norm(v)
+    try:
+        f = float(s)
+        return str(int(f)) if f == int(f) else str(f)
+    except (ValueError, TypeError):
+        return s
+
 def _notion_dob_to_sql(dob_mdy: str) -> str:
     if not dob_mdy:
         return ""
@@ -85,6 +93,8 @@ _PATIENT_FIELDS = [
     ("MI",          "mi",       "MiddleName",  _norm),
     ("Suffix",      "suffix",   "Suffix",      _norm),
     ("Gender",      "gender",   "Gender",      _norm),
+    ("Height",      "height",   "Height",      _norm_num),
+    ("Weight",      "weight",   "Weight",      _norm_num),
     ("Address 1",   "address1", "Address1",    _norm),
     ("Address 2",   "address2", "Address2",    _norm),
     ("City",        "city",     "City",        _norm),
@@ -99,6 +109,7 @@ _PATIENT_COLS = """
     c.FirstName, c.LastName, c.MiddleName, c.Suffix,
     c.DateofBirth, c.Gender,
     c.Address1, c.Address2, c.City, c.State, c.Zip, c.Phone,
+    c.Height, c.Weight,
     c.ICD10_01, c.ICD10_02, c.ICD10_03, c.ICD10_04,
     c.ICD10_05, c.ICD10_06, c.ICD10_07, c.ICD10_08,
     c.ICD10_09, c.ICD10_10, c.ICD10_11, c.ICD10_12,
@@ -230,23 +241,28 @@ def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
 # ── DOCTORS ────────────────────────────────────────────────────────────────────
 
 _DOCTOR_FIELDS = [
-    ("First Name",  "first",    "FirstName",  _norm),
-    ("Last Name",   "last",     "LastName",   _norm),
-    ("NPI",         "npi",      "NPI",        _norm),
-    ("Address 1",   "address1", "Address1",   _norm),
-    ("Address 2",   "address2", "Address2",   _norm),
-    ("City",        "city",     "City",       _norm),
-    ("State",       "state",    "State",      _norm),
-    ("ZIP",         "zip",      "Zip",        _norm),
-    ("Phone",       "phone",    "Phone",      _norm_phone),
+    ("First Name",  "first",    "FirstName",   _norm),
+    ("Last Name",   "last",     "LastName",    _norm),
+    ("MI",          "mi",       "MiddleName",  _norm),
+    ("Suffix",      "suffix",   "Suffix",      _norm),
+    ("NPI",         "npi",      "NPI",         _norm),
+    ("Fax",         "fax",      "Fax",         _norm_phone),
+    ("Address 1",   "address1", "Address1",    _norm),
+    ("Address 2",   "address2", "Address2",    _norm),
+    ("City",        "city",     "City",        _norm),
+    ("State",       "state",    "State",       _norm),
+    ("ZIP",         "zip",      "Zip",         _norm),
+    ("Phone",       "phone",    "Phone",       _norm_phone),
 ]
 
 _FETCH_DOCTOR_BY_NPI = """
-    SELECT ID, FirstName, LastName, NPI, Address1, Address2, City, State, Zip, Phone
+    SELECT ID, FirstName, LastName, MiddleName, Suffix, NPI, Fax,
+           Address1, Address2, City, State, Zip, Phone
     FROM dmeworks.tbl_doctor WHERE NPI = %s LIMIT 2
 """
 _FETCH_DOCTOR_BY_NAME = """
-    SELECT ID, FirstName, LastName, NPI, Address1, Address2, City, State, Zip, Phone
+    SELECT ID, FirstName, LastName, MiddleName, Suffix, NPI, Fax,
+           Address1, Address2, City, State, Zip, Phone
     FROM dmeworks.tbl_doctor WHERE FirstName = %s AND LastName = %s LIMIT 2
 """
 
