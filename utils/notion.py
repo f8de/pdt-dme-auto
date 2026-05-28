@@ -190,7 +190,7 @@ def _parse_patient(token: str, page: dict) -> dict | None:
         return None
 
     # Resolve linked doctor (cached by page_id)
-    rel = props.get("Doctor", {}).get("relation", [])
+    rel = props.get("Prescribing Doctor", {}).get("relation", [])
     doc = {}
     if rel:
         try:

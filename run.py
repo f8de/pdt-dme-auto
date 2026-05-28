@@ -54,6 +54,9 @@ if _FROZEN and len(sys.argv) > 1 and sys.argv[1] == "--dispatch":
         elif mode == "verify":
             from tools.verify_dmeworks import main
             main()
+        elif mode == "fix_ui":
+            from tools.fix_via_ui import main
+            main()
         elif mode == "map_policy":
             from tools.map_policy_dialog import main
             main()
@@ -107,6 +110,7 @@ def _launch(mode: str, extra_args: list[str]) -> None:
             "ingest":       os.path.join(SCRIPT_DIR, "ingest.py"),
             "ingest_test":  os.path.join(SCRIPT_DIR, "ingest_test.py"),
             "verify":       os.path.join(SCRIPT_DIR, "tools", "verify_dmeworks.py"),
+            "fix_ui":       os.path.join(SCRIPT_DIR, "tools", "fix_via_ui.py"),
             "map_policy":   os.path.join(SCRIPT_DIR, "tools", "map_policy_dialog.py"),
             "map_insurance":os.path.join(SCRIPT_DIR, "tools", "map_insurance_company_tabs.py"),
             "grid_probe":   os.path.join(SCRIPT_DIR, "tools", "dmeworks_grid_probe.py"),
@@ -398,7 +402,8 @@ def main() -> None:
     print("  [2]  Full entry     —  Allied")
     print()
     print("  Verification")
-    print("  [3]  Verify       —  compare Notion vs DMEworks")
+    print("  [3]  Audit          —  compare Notion vs DMEworks (report only)")
+    print("  [4]  Fix via UI     —  report diffs and correct via DMEworks UI  (DMEWorks required)")
     print()
     print("  [T]  Tools        —  diagnostic utilities")
     print("  [0]  Exit")
@@ -414,8 +419,8 @@ def main() -> None:
         if choice == "0":
             print()
             sys.exit(0)
-        elif choice not in ("1", "2", "3", "t"):
-            print("  Enter 1, 2, 3, T, or 0.")
+        elif choice not in ("1", "2", "3", "4", "t"):
+            print("  Enter 1, 2, 3, 4, T, or 0.")
             continue
 
         try:
@@ -434,12 +439,13 @@ def main() -> None:
                 _launch("ingest", extra)
 
             elif choice == "3":
-                try:
-                    dry = input("  Dry run? (shows diffs only, no writes) [y/N]: ").strip().lower()
-                except (EOFError, KeyboardInterrupt):
-                    dry = "n"
-                args = ["--dry-run"] if dry == "y" else []
-                _launch("verify", args)
+                _launch("verify", [])
+
+            elif choice == "4":
+                if not (dmeworks_ok and pywinauto_ok):
+                    print("  DMEWorks must be running to fix records via the UI.")
+                    continue
+                _launch("fix_ui", [])
 
             elif choice == "t":
                 _tools_menu(dmeworks_ok, pywinauto_ok)
@@ -449,12 +455,13 @@ def main() -> None:
             sys.exit(0)
 
         print()
-        print("  Entry  (DMEWorks not required)")
-        print("  [1]  Test entry   —  dry-run against test client (c01)")
-        print("  [2]  Full entry   —  Allied")
+        print("  Entry  (DMEWorks required)")
+        print("  [1]  UI field test  —  fill all forms in DMEWorks, no saves")
+        print("  [2]  Full entry     —  Allied")
         print()
         print("  Verification")
-        print("  [3]  Verify       —  compare Notion vs DMEworks")
+        print("  [3]  Audit          —  compare Notion vs DMEworks (report only)")
+        print("  [4]  Fix via UI     —  report diffs and correct via DMEworks UI  (DMEWorks required)")
         print()
         print("  [T]  Tools        —  diagnostic utilities")
         print("  [0]  Exit")

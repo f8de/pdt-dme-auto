@@ -66,7 +66,7 @@ def _sample_patient_page(
         "State":        _rt(state),
         "ZIP":          _rt(zip_),
         "Phone":        _phone(phone),
-        "Doctor":       _relation(doctor_id),
+        "Prescribing Doctor": _relation(doctor_id),
         "ICD10 Codes":  _rt(icd10),
         "Secondary Insurance": _rt(json.dumps(secondary) if secondary else ""),
         "Notes":        _rt(notes),
@@ -231,7 +231,7 @@ def test_parse_patient_no_doctor_relation():
     import utils.notion as n
     # Build page with empty Doctor relation
     page = _sample_patient_page()
-    page["properties"]["Doctor"] = {"relation": []}
+    page["properties"]["Prescribing Doctor"] = {"relation": []}
     result = n._parse_patient("t", page)
     assert result is not None
     assert result["doctor"] == ""

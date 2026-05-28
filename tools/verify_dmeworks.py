@@ -1,19 +1,13 @@
 """
-Verify DMEworks MySQL records against all Notion databases (ground truth).
-Covers: Patients, Doctors, Insurance Companies.
-Shows field-level diffs, prompts confirmation, applies corrections.
+Audit DMEworks MySQL records against all Notion databases (ground truth).
+Read-only — no SQL writes. Covers: Patients, Doctors, Insurance Companies.
+Shows field-level diffs per record.
 
-Failsafes:
-  --dry-run     Show what would change; make no writes.
-  Ambiguous match detection: skip record if name/DOB matches multiple rows.
-  Full transaction: all corrections commit together or rollback on any error.
-  Row-count assertion: warns if UPDATE affected 0 rows.
+To apply corrections: use fix_via_ui.py (option [4] in launcher).
 
 Usage:
-    python tools/verify_dmeworks.py [--dry-run]
-    NOTION_TOKEN must be set in the environment.
+    python tools/verify_dmeworks.py
 """
-import argparse
 import os
 import re
 import sys
@@ -64,10 +58,10 @@ def _print_section(title: str) -> None:
 
 def _print_diff(label: str, diffs: list[tuple]) -> None:
     print(f"\n  {label}")
-    print(f"  {'Field':<14}  {'Notion (correct)':<32}  DMEworks (stored)")
-    print(f"  {'-'*14}  {'-'*32}  {'-'*32}")
+    print(f"  {'Field':<16}  {'Notion (correct)':<32}  DMEworks (stored)")
+    print(f"  {'-'*16}  {'-'*32}  {'-'*32}")
     for field, _sql_col, _sql_val, n_display, m_display in diffs:
-        print(f"  {field:<14}  {n_display:<32}  {m_display}")
+        print(f"  {field:<16}  {n_display:<32}  {m_display}")
 
 
 # ── diff helpers ───────────────────────────────────────────────────────────────
@@ -90,6 +84,7 @@ _PATIENT_FIELDS = [
     ("Last Name",   "last",     "LastName",    _norm),
     ("MI",          "mi",       "MiddleName",  _norm),
     ("Suffix",      "suffix",   "Suffix",      _norm),
+    ("Gender",      "gender",   "Gender",      _norm),
     ("Address 1",   "address1", "Address1",    _norm),
     ("Address 2",   "address2", "Address2",    _norm),
     ("City",        "city",     "City",        _norm),
@@ -98,28 +93,51 @@ _PATIENT_FIELDS = [
     ("Phone",       "phone",    "Phone",       _norm_phone),
 ]
 
-_FETCH_PATIENT = """
-    SELECT
-        c.ID,
-        c.FirstName, c.LastName, c.MiddleName, c.Suffix,
-        c.DateofBirth,
-        c.Address1, c.Address2, c.City, c.State, c.Zip, c.Phone,
-        ci.PolicyNumber AS MBI
+# Shared SELECT columns for all patient lookups
+_PATIENT_COLS = """
+    c.ID,
+    c.FirstName, c.LastName, c.MiddleName, c.Suffix,
+    c.DateofBirth, c.Gender,
+    c.Address1, c.Address2, c.City, c.State, c.Zip, c.Phone,
+    c.ICD10_01, c.ICD10_02, c.ICD10_03, c.ICD10_04,
+    c.ICD10_05, c.ICD10_06, c.ICD10_07, c.ICD10_08,
+    c.ICD10_09, c.ICD10_10, c.ICD10_11, c.ICD10_12,
+    d.NPI AS doctor_npi,
+    ci.PolicyNumber AS MBI
+"""
+
+# Primary lookup: by MBI (most reliable — uniquely identifies the patient)
+_FETCH_PATIENT_BY_MBI = f"""
+    SELECT {_PATIENT_COLS}
+    FROM tbl_customer_insurance ci
+    JOIN tbl_customer c ON c.ID = ci.CustomerID
+    LEFT JOIN dmeworks.tbl_doctor d ON d.ID = c.Doctor1_ID
+    WHERE ci.PolicyNumber = %s AND ci.Rank = 1 AND ci.InactiveDate IS NULL
+    LIMIT 2
+"""
+
+# Fallback: by name + DOB
+_FETCH_PATIENT = f"""
+    SELECT {_PATIENT_COLS}
     FROM tbl_customer c
+    LEFT JOIN dmeworks.tbl_doctor d ON d.ID = c.Doctor1_ID
     LEFT JOIN tbl_customer_insurance ci
         ON ci.CustomerID = c.ID AND ci.Rank = 1 AND ci.InactiveDate IS NULL
     WHERE c.FirstName = %s AND c.LastName = %s AND c.DateofBirth = %s
     LIMIT 2
 """
 
-_FETCH_PATIENT_BY_NAME = """
-    SELECT
-        c.ID, c.FirstName, c.LastName, c.MiddleName, c.Suffix,
-        c.DateofBirth, c.Address1, c.Address2, c.City, c.State, c.Zip, c.Phone
+# Last-resort: by name only
+_FETCH_PATIENT_BY_NAME = f"""
+    SELECT {_PATIENT_COLS}
     FROM tbl_customer c
+    LEFT JOIN dmeworks.tbl_doctor d ON d.ID = c.Doctor1_ID
+    LEFT JOIN tbl_customer_insurance ci
+        ON ci.CustomerID = c.ID AND ci.Rank = 1 AND ci.InactiveDate IS NULL
     WHERE c.FirstName = %s AND c.LastName = %s
     LIMIT 2
 """
+
 
 def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
     results = []
@@ -129,8 +147,16 @@ def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
         name = f"{p['first']} {p['last']}"
         dob_sql = _notion_dob_to_sql(p["dob"])
 
-        cur.execute(_FETCH_PATIENT, (p["first"], p["last"], dob_sql))
-        rows = cur.fetchall()
+        # 1. Try MBI lookup first
+        rows = []
+        if p.get("mbi"):
+            cur.execute(_FETCH_PATIENT_BY_MBI, (p["mbi"],))
+            rows = cur.fetchall()
+
+        # 2. Fall back to name + DOB
+        if not rows and dob_sql:
+            cur.execute(_FETCH_PATIENT, (p["first"], p["last"], dob_sql))
+            rows = cur.fetchall()
 
         if len(rows) > 1:
             msg = f"SKIP patient {name} — ambiguous: {len(rows)} records match in DMEworks"
@@ -140,6 +166,7 @@ def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
             continue
 
         if not rows:
+            # 3. Last resort: name only
             cur.execute(_FETCH_PATIENT_BY_NAME, (p["first"], p["last"]))
             rows = cur.fetchall()
             if len(rows) > 1:
@@ -154,20 +181,11 @@ def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
                 log.warning(msg)
                 stats["not_found"] += 1
                 continue
-            row = rows[0]
-            cur.execute(
-                "SELECT PolicyNumber FROM tbl_customer_insurance "
-                "WHERE CustomerID=%s AND Rank=1 AND InactiveDate IS NULL LIMIT 1",
-                (row["ID"],),
-            )
-            mbi_row = cur.fetchone()
-            row["MBI"] = mbi_row["PolicyNumber"] if mbi_row else ""
-        else:
-            row = rows[0]
 
+        row = rows[0]
         diffs = _diff(_PATIENT_FIELDS, p, row)
 
-        # DOB — sql_val is YYYY-MM-DD for the UPDATE; display Notion value as MM/DD/YYYY
+        # DOB — sql_val is YYYY-MM-DD for UPDATE; display Notion value as MM/DD/YYYY
         m_dob = row["DateofBirth"].strftime("%Y-%m-%d") if row["DateofBirth"] else ""
         if dob_sql != m_dob:
             diffs.append(("DOB", "DateofBirth", dob_sql or None,
@@ -177,6 +195,25 @@ def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
         if _norm(p["mbi"]) != _norm(row.get("MBI", "")):
             diffs.append(("MBI", None, _norm(p["mbi"]),
                           _norm(p["mbi"]), _norm(row.get("MBI", ""))))
+
+        # Doctor NPI — display only (__skip__), requires manual DB fix (Doctor1_ID lookup)
+        n_npi = _norm(p.get("_doctor", {}).get("npi", ""))
+        m_npi = _norm(row.get("doctor_npi", ""))
+        if n_npi != m_npi:
+            diffs.append(("Doctor NPI", "__skip__", None,
+                          n_npi or "(none)", m_npi or "(none)"))
+
+        # ICD-10 codes — set comparison (order doesn't matter)
+        n_icd10 = sorted(c.strip().upper() for c in p.get("icd10", []) if c.strip())
+        m_icd10 = sorted(
+            row[f"ICD10_{i:02d}"].strip().upper()
+            for i in range(1, 13)
+            if row.get(f"ICD10_{i:02d}")
+        )
+        if n_icd10 != m_icd10:
+            diffs.append(("ICD-10 codes", "__icd10__", p.get("icd10", []),
+                          " | ".join(n_icd10) or "(none)",
+                          " | ".join(m_icd10) or "(none)"))
 
         if diffs:
             log.info("patient %s (ID=%s) — %d field(s) differ: %s",
@@ -206,11 +243,11 @@ _DOCTOR_FIELDS = [
 
 _FETCH_DOCTOR_BY_NPI = """
     SELECT ID, FirstName, LastName, NPI, Address1, Address2, City, State, Zip, Phone
-    FROM tbl_doctor WHERE NPI = %s LIMIT 2
+    FROM dmeworks.tbl_doctor WHERE NPI = %s LIMIT 2
 """
 _FETCH_DOCTOR_BY_NAME = """
     SELECT ID, FirstName, LastName, NPI, Address1, Address2, City, State, Zip, Phone
-    FROM tbl_doctor WHERE FirstName = %s AND LastName = %s LIMIT 2
+    FROM dmeworks.tbl_doctor WHERE FirstName = %s AND LastName = %s LIMIT 2
 """
 
 def _verify_doctors(cur, doctors: list[dict]) -> tuple[list[tuple], dict]:
@@ -259,7 +296,7 @@ def _verify_doctors(cur, doctors: list[dict]) -> tuple[list[tuple], dict]:
 # ── INSURANCE COMPANIES ────────────────────────────────────────────────────────
 
 _FETCH_INSURANCE_BY_NAME = """
-    SELECT ID, Name FROM tbl_insurancecompany WHERE Name = %s LIMIT 1
+    SELECT ID, Name FROM dmeworks.tbl_insurancecompany WHERE Name = %s LIMIT 1
 """
 
 def _verify_insurance(cur, companies: list[dict]) -> tuple[list[tuple], dict]:
@@ -272,7 +309,8 @@ def _verify_insurance(cur, companies: list[dict]) -> tuple[list[tuple], dict]:
         if row is None:
             log.warning("insurance '%s' — not found in DMEworks (manual action required)", c["name"])
             stats["not_found"] += 1
-            results.append(("insurance", c, None, [("Name", c["name"], "(not found in DMEworks)")]))
+            results.append(("insurance", c, None,
+                            [("Name", "__skip__", None, c["name"], "(not found in DMEworks)")]))
         else:
             print(f"  {c['name']} — OK")
             log.debug("insurance '%s' — OK", c["name"])
@@ -280,100 +318,16 @@ def _verify_insurance(cur, companies: list[dict]) -> tuple[list[tuple], dict]:
     return results, stats
 
 
-# ── APPLY CORRECTIONS ──────────────────────────────────────────────────────────
-
-_UPDATE_MBI = """
-    UPDATE tbl_customer_insurance SET PolicyNumber=%s
-    WHERE CustomerID=%s AND Rank=1 AND InactiveDate IS NULL
-"""
-
-
-def _apply(cur, all_diffs: list[tuple], dry_run: bool) -> int:
-    count = 0
-    for kind, notion, row, diffs in all_diffs:
-        changed_fields = [f for f, *_ in diffs]
-        tag = "[DRY RUN] would update" if dry_run else "Updated"
-
-        if kind == "patient":
-            p = notion
-            # Split: tbl_customer columns vs MBI (separate table, sql_col=None)
-            cust_cols, cust_vals, update_mbi, new_mbi = [], [], False, None
-            for _label, sql_col, sql_val, _nd, _dd in diffs:
-                if sql_col is None:
-                    update_mbi, new_mbi = True, sql_val
-                else:
-                    cust_cols.append(f"{sql_col}=%s")
-                    cust_vals.append(sql_val)
-
-            if not dry_run:
-                if cust_cols:
-                    sql = f"UPDATE tbl_customer SET {', '.join(cust_cols)} WHERE ID=%s"
-                    cur.execute(sql, cust_vals + [row["ID"]])
-                    if cur.rowcount == 0:
-                        msg = f"UPDATE matched 0 rows for patient ID={row['ID']}"
-                        print(f"  WARNING: {msg}")
-                        log.warning(msg)
-                if update_mbi:
-                    cur.execute(_UPDATE_MBI, (new_mbi, row["ID"]))
-                    if cur.rowcount == 0:
-                        msg = f"MBI UPDATE matched 0 rows for CustomerID={row['ID']}"
-                        print(f"  WARNING: {msg}")
-                        log.warning(msg)
-                log.info("updated patient %s %s (ID=%s) fields: %s",
-                         p["first"], p["last"], row["ID"], changed_fields)
-            else:
-                log.info("[DRY RUN] would update patient %s %s (ID=%s) fields: %s",
-                         p["first"], p["last"], row["ID"], changed_fields)
-            print(f"  {tag} patient: {p['first']} {p['last']} (ID={row['ID']})")
-            count += 1
-
-        elif kind == "doctor":
-            d = notion
-            doc_cols = [f"{sql_col}=%s" for _, sql_col, *_ in diffs]
-            doc_vals = [sql_val for _, _sc, sql_val, *_ in diffs]
-
-            if not dry_run:
-                if doc_cols:
-                    sql = f"UPDATE tbl_doctor SET {', '.join(doc_cols)} WHERE ID=%s"
-                    cur.execute(sql, doc_vals + [row["ID"]])
-                    if cur.rowcount == 0:
-                        msg = f"UPDATE matched 0 rows for doctor ID={row['ID']}"
-                        print(f"  WARNING: {msg}")
-                        log.warning(msg)
-                log.info("updated doctor %s %s (ID=%s) fields: %s",
-                         d["first"], d["last"], row["ID"], changed_fields)
-            else:
-                log.info("[DRY RUN] would update doctor %s %s (ID=%s) fields: %s",
-                         d["first"], d["last"], row["ID"], changed_fields)
-            print(f"  {tag} doctor: {d['first']} {d['last']} (ID={row['ID']})")
-            count += 1
-
-        elif kind == "insurance":
-            msg = f"SKIP insurance '{notion['name']}' — manual action required in DMEworks"
-            print(f"  {msg}")
-            log.warning(msg)
-
-    return count
-
-
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Verify all Notion DBs against DMEworks")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show diffs without writing anything to DMEworks")
-    args = parser.parse_args()
-
     try:
         token = get_notion_token()
     except RuntimeError as exc:
         log.error("Failed to get Notion token: %s", exc)
         sys.exit(str(exc))
 
-    log.info("verify start — dry_run=%s", args.dry_run)
-
-    if args.dry_run:
-        print("  [DRY RUN — no changes will be written]")
+    log.info("audit start")
 
     # Patient scope selection
     print()
@@ -389,7 +343,7 @@ def main() -> None:
         sys.exit(0)
 
     if scope == "2":
-        patient_fetch_statuses = None  # fetch all
+        patient_fetch_statuses = None
         scope_label = "all patients"
     elif scope == "3":
         try:
@@ -405,7 +359,6 @@ def main() -> None:
 
     log.info("patient scope: %s", scope_label)
 
-    # Fetch all three Notion DBs in parallel
     print("\nFetching Notion data...")
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
@@ -458,15 +411,15 @@ def main() -> None:
     log.info("run summary — patients: %s | doctors: %s | insurance: %s",
              patient_stats, doctor_stats, insurance_stats)
 
+    cur.close()
+    conn.close()
+
     if not all_diffs:
-        print("\n  All records match. No corrections needed.")
-        log.info("verify complete — all records match, no corrections needed")
-        cur.close()
-        conn.close()
+        print("\n  All records match.")
+        log.info("audit complete — all records match")
         return
 
-    # Summary report
-    _print_section(f"DISCREPANCIES — {len(all_diffs)} record(s) need correction")
+    _print_section(f"DISCREPANCIES — {len(all_diffs)} record(s)")
     for kind, notion, _row, diffs in all_diffs:
         if kind == "patient":
             label = f"Patient: {notion['first']} {notion['last']}"
@@ -477,40 +430,12 @@ def main() -> None:
         _print_diff(label, diffs)
 
     print(f"\n{'='*70}")
-
-    if args.dry_run:
-        print("  Dry run complete. Re-run without --dry-run to apply corrections.")
-        log.info("dry run complete — %d discrepancy(ies) found, no changes written", len(all_diffs))
-        cur.close()
-        conn.close()
-        return
-
+    print("  To fix: use option [4] in the launcher (Verify + Fix via DMEworks UI).")
+    log.info("audit complete — %d discrepancy(ies) found", len(all_diffs))
     try:
-        answer = input("Apply corrections to DMEworks? [y/N]: ").strip().lower()
+        input("\nPress Enter to close...")
     except (EOFError, KeyboardInterrupt):
-        answer = "n"
-    if answer != "y":
-        print("Aborted. No changes made.")
-        log.info("user aborted — no changes made")
-        cur.close()
-        conn.close()
-        return
-
-    # Apply all corrections in a single transaction — rollback on any error
-    try:
-        count = _apply(cur, all_diffs, dry_run=False)
-        conn.commit()
-        print(f"\nDone. {count} record(s) corrected.")
-        log.info("verify complete — %d record(s) corrected and committed", count)
-    except Exception as exc:
-        conn.rollback()
-        print(f"\nERROR: {exc}")
-        print("Transaction rolled back — no changes were written.")
-        log.error("transaction rolled back due to error: %s", exc, exc_info=True)
-        raise
-    finally:
-        cur.close()
-        conn.close()
+        pass
 
 
 if __name__ == "__main__":

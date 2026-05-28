@@ -60,7 +60,7 @@ def fetch_matching_npis(npis: list[str]) -> set[str]:
     conn = _connect()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT NPI FROM tbl_doctor WHERE NPI IN ({ph})", npis)
+        cur.execute(f"SELECT NPI FROM dmeworks.tbl_doctor WHERE NPI IN ({ph})", npis)
         return {r[0].strip() for r in cur.fetchall()}
     finally:
         conn.close()
@@ -168,7 +168,7 @@ def verify_patients(patients: list[dict]) -> dict[str, dict]:
                 c.ICD10_12       AS icd10_12
             FROM tbl_customer_insurance ci
             JOIN tbl_customer c  ON c.ID = ci.CustomerID
-            LEFT JOIN tbl_doctor d ON d.ID = c.Doctor1_ID
+            LEFT JOIN dmeworks.tbl_doctor d ON d.ID = c.Doctor1_ID
             WHERE ci.PolicyNumber IN ({ph})
               AND ci.Rank = 1
               AND ci.InactiveDate IS NULL
