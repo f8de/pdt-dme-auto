@@ -14,7 +14,10 @@ from pywinauto import Application
 T_LONG = 1.8
 T_MED  = 1.0
 
-OUTPUT_FILE = os.path.join(os.path.dirname(__file__), "..", "config", "customer_form_map.txt")
+import sys
+_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_logs = os.path.join(os.path.dirname(sys.executable), "logs") if getattr(sys, "frozen", False) else os.path.join(_root, "logs")
+OUTPUT_FILE = os.path.join(_logs, "customer_form_map.txt")
 
 
 def get_main():
