@@ -1,18 +1,16 @@
 """
-Dumps all UI controls inside the Customer form Work Area.
-Run with DMEworks open and a customer record visible (open any existing customer).
+Dumps all UI controls for every tab on the Customer form.
+Run with DMEworks open and a customer record visible.
 
 Usage:
     python tools/map_customer_form.py
-
-Output: prints every control's auto_id, control_type, and title so we can identify
-the Notes tab/field auto_ids for future UI automation.
 """
 
 import time
 from pywinauto import Application
 
 T_LONG = 1.8
+T_MED  = 1.0
 
 
 def get_main():
@@ -34,7 +32,7 @@ def find_mdi_child(main, keyword):
     return None
 
 
-def dump_controls(parent, depth=0, max_depth=6):
+def dump_controls(parent, depth=0, max_depth=8):
     if depth > max_depth:
         return
     indent = "  " * depth
@@ -56,12 +54,11 @@ def dump_controls(parent, depth=0, max_depth=6):
 
 def main():
     print("=" * 60)
-    print("DMEworks Customer Form Control Map")
+    print("DMEworks Customer Form — Full Tab Control Map")
     print("=" * 60)
 
     a, main_win = get_main()
 
-    # Try to find an open Customer form, or open a fresh one
     w = find_mdi_child(main_win, "Customer")
     if not w:
         print("No Customer window found — opening one via menu...")
@@ -70,13 +67,46 @@ def main():
         w = find_mdi_child(main_win, "Customer")
 
     if not w:
-        print("ERROR: Could not open Customer form. Is DMEworks running?")
+        print("ERROR: Could not open Customer form.")
         return
 
     print(f"\nCustomer form found: '{w.window_text()}'")
-    print("Dumping all controls (depth <= 6)...\n")
-    dump_controls(w)
-    print("\nDone.")
+
+    # Find the main tab control
+    try:
+        tab_ctrl = w.child_window(auto_id="TabControl1", control_type="Tab", found_index=0)
+        tab_items = [c for c in tab_ctrl.children() if c.element_info.control_type == "TabItem"]
+        tab_names = []
+        for t in tab_items:
+            try:
+                tab_names.append(t.window_text())
+            except Exception:
+                pass
+        print(f"Found {len(tab_names)} tabs: {tab_names}\n")
+    except Exception as e:
+        print(f"Could not find TabControl1: {e}")
+        print("\nFalling back to full dump...\n")
+        dump_controls(w)
+        input("Press Enter to close...")
+        return
+
+    for tab_name in tab_names:
+        print("=" * 60)
+        print(f"TAB: {tab_name}")
+        print("=" * 60)
+        try:
+            tab_ctrl.child_window(title=tab_name, control_type="TabItem").click_input()
+            time.sleep(T_MED)
+            # Re-find the pane after click
+            w2 = find_mdi_child(main_win, "Customer")
+            if w2:
+                dump_controls(w2.child_window(auto_id="tpWorkArea", found_index=0))
+        except Exception as e:
+            print(f"  Error clicking tab '{tab_name}': {e}")
+        print()
+
+    print("=" * 60)
+    print("Done.")
     input("Press Enter to close...")
 
 
