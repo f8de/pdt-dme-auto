@@ -272,28 +272,52 @@ def _search_and_open_work_area(w, last_name):
     """Filter work area by last name and double-click the first matching row. Returns True if opened."""
     go_work_area(w)
     time.sleep(T_MED)
-    for aid in ("txtLastName", "txtSearch", "edtLastName", "edtSearch"):
+
+    filtered = False
+    for aid in ("txtLastName", "txtSearch", "edtLastName", "edtSearch", "txtName", "edtName"):
         try:
             fld = w.child_window(auto_id=aid, found_index=0)
             fld.set_edit_text(last_name)
-            time.sleep(T_MED)
-            fld.type_keys("{ENTER}")
-            time.sleep(T_LONG)
+            time.sleep(0.3)
+            filtered = True
             break
         except Exception:
             pass
-    try:
-        for item in w.descendants(control_type="DataItem"):
+
+    if filtered:
+        keyboard.send_keys("{ENTER}")
+        time.sleep(T_LONG)
+        for btn in ("Find", "Search", "Go"):
             try:
-                if last_name.lower() in item.window_text().lower():
-                    item.double_click_input()
-                    time.sleep(T_LONG)
-                    return True
+                w.child_window(title=btn, control_type="Button").click_input()
+                time.sleep(T_LONG)
+                break
             except Exception:
                 pass
-    except Exception:
-        pass
-    log.warning("    [warn] Record with last='%s' not found in work area grid", last_name)
+
+    # Scan multiple control types; prefer text match, fall back to first row if filtered
+    for ct in ("DataItem", "ListItem", "TreeItem", "Custom"):
+        try:
+            items = list(w.descendants(control_type=ct))
+            for item in items:
+                try:
+                    if last_name.lower() in (item.window_text() or "").lower():
+                        item.double_click_input()
+                        time.sleep(T_LONG)
+                        return True
+                except Exception:
+                    pass
+            if filtered and items:
+                try:
+                    items[0].double_click_input()
+                    time.sleep(T_LONG)
+                    return True
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    log.warning("    [warn] Record '%s' not found in work area — probe work area to map search controls", last_name)
     return False
 
 # ─── COMBO AND DOB ────────────────────────────────────────────────────────────
