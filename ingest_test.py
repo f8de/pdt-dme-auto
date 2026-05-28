@@ -22,15 +22,15 @@ _TEST_MBI = "1AA0AA0AA11"
 
 _TEST_DOCTOR = {
     "first": "Test", "last": "Doctor", "mi": "T", "suffix": "Jr.", "courtesy": "Dr.",
-    "npi": _TEST_NPI, "fax": "6095550001", "address1": "1 Test Ave", "address2": "Suite 100",
-    "city": "Trenton", "state": "NJ", "zip": "08610", "phone": "6095550000",
+    "npi": _TEST_NPI, "fax": "5550000001", "address1": "1 Test Street", "address2": "Suite 000",
+    "city": "Test City", "state": "NJ", "zip": "00000", "phone": "5550000000",
 }
 
 _TEST_PATIENT = {
     "first": "Test", "last": "Patient", "mi": "T", "suffix": "Jr.",
-    "dob": "01/01/1980", "mbi": _TEST_MBI,
-    "address1": "1 Test Ave", "address2": "Apt 2B", "city": "Trenton",
-    "state": "NJ", "zip": "08610", "phone": "6095550002",
+    "dob": "01/01/1900", "mbi": _TEST_MBI,
+    "address1": "1 Test Street", "address2": "Apt 000", "city": "Test City",
+    "state": "NJ", "zip": "00000", "phone": "5550000002",
     "gender": "Male", "height": "70", "weight": "160",
     "icd10": ["M54.5"],
     "secondary": None,
