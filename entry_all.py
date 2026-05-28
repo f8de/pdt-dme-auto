@@ -60,37 +60,44 @@ if ARGS.setup:
 from utils import notion
 from utils.creds import get_notion_token
 
-_token            = get_notion_token()
+_token             = get_notion_token()
 INSURANCE_BY_STATE = notion.fetch_insurance_map(_token)
-_raw               = notion.fetch_work_queue(_token)
 
-# Unique doctors by NPI
-_seen_npis: set[str] = set()
-DOCTORS: list[dict]  = []
-for _p in _raw:
-    _d   = _p.get("_doctor", {})
-    _npi = _d.get("npi", "")
-    if _npi and _npi not in _seen_npis:
-        _seen_npis.add(_npi)
-        DOCTORS.append(_d)
+if UI_TEST:
+    from ingest_test import _TEST_PATIENT, _TEST_DOCTOR
+    DOCTORS   = [_TEST_DOCTOR]
+    PATIENTS  = [_TEST_PATIENT]
+    _ins_name = INSURANCE_BY_STATE.get(_TEST_PATIENT["state"], "")
+    INSURANCE_COMPANIES = [{"name": _ins_name, "type": "MEDICARE"}] if _ins_name else []
+    db.configure("c01")
+else:
+    _raw = notion.fetch_work_queue(_token)
 
-PATIENTS: list[dict] = _raw
+    _seen_npis: set[str] = set()
+    DOCTORS: list[dict]  = []
+    for _p in _raw:
+        _d   = _p.get("_doctor", {})
+        _npi = _d.get("npi", "")
+        if _npi and _npi not in _seen_npis:
+            _seen_npis.add(_npi)
+            DOCTORS.append(_d)
 
-# Derive insurance companies from patient states + secondary fields
-_seen_ins: set[str]             = set()
-INSURANCE_COMPANIES: list[dict] = []
-for _p in PATIENTS:
-    _medicare_name = INSURANCE_BY_STATE.get(_p.get("state", ""), "")
-    if _medicare_name and _medicare_name not in _seen_ins:
-        _seen_ins.add(_medicare_name)
-        INSURANCE_COMPANIES.append({"name": _medicare_name, "type": "MEDICARE"})
-    _sec      = _p.get("secondary") or {}
-    _sec_name = _sec.get("ins_company", "")
-    if _sec_name and _sec_name not in _seen_ins:
-        _seen_ins.add(_sec_name)
-        INSURANCE_COMPANIES.append({"name": _sec_name, "type": "OTHER"})
+    PATIENTS: list[dict] = _raw
 
-db.configure()
+    _seen_ins: set[str]             = set()
+    INSURANCE_COMPANIES: list[dict] = []
+    for _p in PATIENTS:
+        _medicare_name = INSURANCE_BY_STATE.get(_p.get("state", ""), "")
+        if _medicare_name and _medicare_name not in _seen_ins:
+            _seen_ins.add(_medicare_name)
+            INSURANCE_COMPANIES.append({"name": _medicare_name, "type": "MEDICARE"})
+        _sec      = _p.get("secondary") or {}
+        _sec_name = _sec.get("ins_company", "")
+        if _sec_name and _sec_name not in _seen_ins:
+            _seen_ins.add(_sec_name)
+            INSURANCE_COMPANIES.append({"name": _sec_name, "type": "OTHER"})
+
+    db.configure()
 
 # ─── STATUS OVERLAY ───────────────────────────────────────────────────────────
 
@@ -325,12 +332,9 @@ def create_doctor(doc, main_win, a):
         click_inner_tab(w, "Numbers")
         set_field(w, "txtNPI", doc["npi"])
 
-        if UI_TEST:
-            log.info("    [UI TEST] Fields filled — closing without saving")
-        else:
-            toolbar_click(w, "Save")
-            dismiss_validation(get_app())
-            log.info("    [saved] %s", label)
+        toolbar_click(w, "Save")
+        dismiss_validation(get_app())
+        log.info("    [saved] %s", label)
     except Exception:
         log.error("    Error creating doctor %s — closing window", label)
         try:
@@ -349,12 +353,8 @@ def ensure_all_doctors(a, main_win, existing_npis):
     log.info("=" * 52)
     log.info("DB check: %d/%d doctor(s) already exist", len(existing_npis), len(DOCTORS))
 
-    if UI_TEST:
-        to_create = DOCTORS[:1]
-        to_skip   = []
-    else:
-        to_create = [d for d in DOCTORS if d["npi"] not in existing_npis]
-        to_skip   = [d for d in DOCTORS if d["npi"] in existing_npis]
+    to_create = [d for d in DOCTORS if d["npi"] not in existing_npis]
+    to_skip   = [d for d in DOCTORS if d["npi"] in existing_npis]
 
     for doc in to_skip:
         log.info("  [SKIP]   NPI %s", doc["npi"])
@@ -390,12 +390,9 @@ def create_insurance_company(name, main_win, a):
         dismiss_save_dialog(get_app())
         w = find_mdi_child(main_win, "Insurance Company")
         set_field(w, "txtName", name)
-        if UI_TEST:
-            log.info("    [UI TEST] Fields filled — closing without saving")
-        else:
-            toolbar_click(w, "Save")
-            dismiss_validation(get_app())
-            log.info("    [saved] %s", name)
+        toolbar_click(w, "Save")
+        dismiss_validation(get_app())
+        log.info("    [saved] %s", name)
     except Exception:
         log.error("    Error creating insurance company %s — closing window", name)
         try:
@@ -415,20 +412,16 @@ def ensure_all_insurance_companies(a, main_win, existing_names):
     log.info("DB check: %d/%d company(s) already exist", len(existing_names), len(INSURANCE_COMPANIES))
 
     dismiss_popup(a)
-    if UI_TEST:
-        non_medicare = [c for c in INSURANCE_COMPANIES if c["type"] != "MEDICARE"]
-        companies = non_medicare[:1] if non_medicare else INSURANCE_COMPANIES[:1]
-    else:
-        companies = INSURANCE_COMPANIES
+    companies = INSURANCE_COMPANIES
     for i, co in enumerate(companies, 1):
         name = co["name"]
         is_medicare = co["type"] == "MEDICARE"
         set_status(f"[2/3] Insurance {i}/{len(companies)}: {name}")
 
-        if not UI_TEST and name.lower() in existing_names:
+        if name.lower() in existing_names:
             tag = "[OK]    " if is_medicare else "[SKIP]  "
             log.info("  %s %s", tag, name)
-        elif not UI_TEST and is_medicare:
+        elif is_medicare:
             log.error("  [ERROR]  '%s' — not found, must be created manually in DMEworks", name)
         else:
             log.info("  [CREATE] %s", name)
@@ -557,12 +550,9 @@ def create_customer(p, main_win, a):
             else:
                 log.error("    Policy Information dialog not found (secondary)")
 
-        if UI_TEST:
-            log.info("    [UI TEST] Fields filled — closing without saving")
-        else:
-            toolbar_click(dlg, "Save")
-            dismiss_validation(get_app())
-            log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
+        toolbar_click(dlg, "Save")
+        dismiss_validation(get_app())
+        log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
 
     except Exception:
         log.error("    Error mid-form for MBI %s — closing window", mask_mbi(p["mbi"]))
@@ -582,12 +572,8 @@ def ensure_all_customers(a, main_win, existing_mbis):
     log.info("=" * 52)
     log.info("DB check: %d/%d patient(s) already exist", len(existing_mbis), len(PATIENTS))
 
-    if UI_TEST:
-        to_create = PATIENTS[:1]
-        to_skip   = []
-    else:
-        to_create = [p for p in PATIENTS if p["mbi"] not in existing_mbis]
-        to_skip   = [p for p in PATIENTS if p["mbi"] in existing_mbis]
+    to_create = [p for p in PATIENTS if p["mbi"] not in existing_mbis]
+    to_skip   = [p for p in PATIENTS if p["mbi"] in existing_mbis]
 
     for p in to_skip:
         log.info("  [SKIP]   MBI %s", mask_mbi(p["mbi"]))
@@ -751,17 +737,25 @@ def run_verification():
 
 def main():
     if UI_TEST:
-        log.info("*** UI TEST MODE — filling forms without saving ***")
-        set_status("UI Test — 1 doctor, 1 insurance, 1 patient")
+        log.info("*** UI TEST MODE — test data only, target: c01 ***")
+        set_status("UI Test — entry + SQL verify")
         log.info("=" * 52)
-        log.info("DMEworks UI Test — first record of each type")
+        log.info("DMEworks UI Test — test patient/doctor, c01 only")
         log.info("=" * 52)
 
-        errors = validate_csv()
-        if errors:
-            log.warning("Validation warnings (continuing anyway in UI test):")
-            for err in errors:
-                log.warning("  %s", err)
+        log.info("")
+        log.info("Running DB existence checks (c01)...")
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_npis  = pool.submit(db.fetch_matching_npis,            [d["npi"]  for d in DOCTORS])
+            f_names = pool.submit(db.fetch_matching_insurance_names, [c["name"] for c in INSURANCE_COMPANIES])
+            f_mbis  = pool.submit(db.fetch_matching_mbis,            [p["mbi"]  for p in PATIENTS])
+            existing_npis  = f_npis.result()
+            existing_names = f_names.result()
+            existing_mbis  = f_mbis.result()
+
+        need_doctors  = sum(1 for d in DOCTORS if d["npi"] not in existing_npis)
+        need_patients = sum(1 for p in PATIENTS if p["mbi"] not in existing_mbis)
+        log.info("Need to create: %d doctor(s), %d patient(s)", need_doctors, need_patients)
 
         log.info("")
         log.info("Connecting to DMEworks...")
@@ -769,14 +763,16 @@ def main():
         log.info("Connected")
         dismiss_popup(a)
 
-        ensure_all_doctors(a, main_win, set())
-        ensure_all_insurance_companies(a, main_win, set())
-        ensure_all_customers(a, main_win, set())
+        ensure_all_doctors(a, main_win, existing_npis)
+        ensure_all_insurance_companies(a, main_win, existing_names)
+        ensure_all_customers(a, main_win, existing_mbis)
 
-        set_status("UI Test DONE — no records saved")
+        run_verification()
+
+        set_status("UI Test DONE — check log for PASS/FAIL")
         log.info("")
         log.info("=" * 52)
-        log.info("UI TEST DONE — all forms filled, no records saved")
+        log.info("UI TEST DONE")
         log.info("=" * 52)
         return
 
