@@ -101,6 +101,7 @@ a = Analysis(
         "tools.fix_via_ui",
         "tools.db_dump",
         "tools.map_customer_form",
+        "tools.map_doctor_form",
         "tools.map_policy_dialog",
         "tools.map_insurance_company_tabs",
         "tools.dmeworks_grid_probe",

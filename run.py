@@ -75,6 +75,9 @@ if _FROZEN and len(sys.argv) > 1 and sys.argv[1] == "--dispatch":
         elif mode == "map_customer_form":
             from tools.map_customer_form import main
             main()
+        elif mode == "map_doctor_form":
+            from tools.map_doctor_form import main
+            main()
     except SystemExit:
         raise
     except Exception:
@@ -117,6 +120,7 @@ def _launch(mode: str, extra_args: list[str]) -> None:
             "db_audit":          os.path.join(SCRIPT_DIR, "tools", "db_dump.py"),
             "entry_all":         os.path.join(SCRIPT_DIR, "entry_all.py"),
             "map_customer_form": os.path.join(SCRIPT_DIR, "tools", "map_customer_form.py"),
+            "map_doctor_form":   os.path.join(SCRIPT_DIR, "tools", "map_doctor_form.py"),
         }
         subprocess.run([sys.executable, script_map[mode]] + extra_args)
 
@@ -296,6 +300,7 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
     print("  [3]  Grid probe              —  probes DataGridView cell reading")
     print("  [4]  DB Audit               —  dump all tables to tools/db_dump.txt")
     print("  [5]  Map customer form       —  discover Customer form control IDs")
+    print("  [6]  Map doctor form         —  discover Doctor form control IDs")
     print()
     print("  [B]  Back")
     print()
@@ -309,7 +314,7 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
 
         if choice == "b":
             return
-        elif choice in ("1", "2", "3", "5") and not tools_ok:
+        elif choice in ("1", "2", "3", "5", "6") and not tools_ok:
             print("  DMEWorks must be open to use these tools.")
         elif choice == "1":
             _launch("map_policy", [])
@@ -326,8 +331,11 @@ def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
         elif choice == "5":
             _launch("map_customer_form", [])
             return
+        elif choice == "6":
+            _launch("map_doctor_form", [])
+            return
         else:
-            print("  Enter 1, 2, 3, 4, 5, or B.")
+            print("  Enter 1–6 or B.")
 
 
 # ── main menu ─────────────────────────────────────────────────────────────────
