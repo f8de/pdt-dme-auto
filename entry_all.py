@@ -506,7 +506,7 @@ def create_customer(p, main_win, a):
         click_inner_tab(dlg, "Contacts")
         contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
         set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
-                       p["doctor"])
+                       p.get("doctor", ""))
         log.info("    Doctor: assigned")
 
         click_inner_tab(dlg, "Diagnosis")
