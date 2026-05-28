@@ -232,6 +232,17 @@ def close_window(main_win, keyword):
     except Exception as e:
         log.warning("close_window(%s): %s", keyword, e)
 
+def _close_customer(main_win):
+    """Close Customer form by auto_id to avoid matching FormCustomerNotes by title."""
+    try:
+        w = main_win.child_window(auto_id="FormCustomer", control_type="Window", found_index=0)
+        w.child_window(auto_id="tlbMain", control_type="ToolBar", found_index=0).child_window(
+            title="Close", control_type="Button").click_input()
+        time.sleep(T_SHORT)
+        dismiss_save_dialog(get_app())
+    except Exception as e:
+        log.warning("_close_customer: %s", e)
+
 def open_fresh_window(main_win, a, keyword, menu_path):
     if find_mdi_child(main_win, keyword):
         close_window(main_win, keyword)
@@ -256,6 +267,34 @@ def click_inner_tab(w, title):
                    found_index=0).child_window(
         title=title, control_type="TabItem").click_input()
     time.sleep(T_MED)
+
+def _search_and_open_work_area(w, last_name):
+    """Filter work area by last name and double-click the first matching row. Returns True if opened."""
+    go_work_area(w)
+    time.sleep(T_MED)
+    for aid in ("txtLastName", "txtSearch", "edtLastName", "edtSearch"):
+        try:
+            fld = w.child_window(auto_id=aid, found_index=0)
+            fld.set_edit_text(last_name)
+            time.sleep(T_MED)
+            fld.type_keys("{ENTER}")
+            time.sleep(T_LONG)
+            break
+        except Exception:
+            pass
+    try:
+        for item in w.descendants(control_type="DataItem"):
+            try:
+                if last_name.lower() in item.window_text().lower():
+                    item.double_click_input()
+                    time.sleep(T_LONG)
+                    return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    log.warning("    [warn] Record with last='%s' not found in work area grid", last_name)
+    return False
 
 # ─── COMBO AND DOB ────────────────────────────────────────────────────────────
 
@@ -346,6 +385,48 @@ def create_doctor(doc, main_win, a):
     time.sleep(T_SHORT)
 
 
+def update_doctor(doc, main_win, a):
+    label = f"NPI {doc['npi']}"
+    w = open_fresh_window(main_win, a, "Doctor", "Maintain->Doctor")
+    if not w:
+        raise RuntimeError(f"Doctor window not found for {label}")
+    try:
+        if not _search_and_open_work_area(w, doc["last"]):
+            log.warning("  [warn] Could not open existing doctor %s in UI", label)
+            close_window(main_win, "Doctor")
+            return
+        w = find_mdi_child(main_win, "Doctor")
+
+        set_field(w, "txtLastName",   doc["last"])
+        set_field(w, "txtFirstName",  doc["first"])
+        set_field(w, "txtMiddleName", doc["mi"])
+        set_field(w, "txtSuffix",     doc["suffix"])
+
+        click_inner_tab(w, "Address")
+        set_field(w, "txtAddress1", doc["address1"])
+        set_field(w, "txtAddress2", doc["address2"])
+        set_field(w, "txtCity",     doc["city"])
+        set_field(w, "txtState",    doc["state"])
+        set_field(w, "txtZip",      doc["zip"])
+        set_field(w, "txtPhone",    fmt_phone(doc["phone"]))
+
+        click_inner_tab(w, "Numbers")
+        set_field(w, "txtNPI", doc["npi"])
+
+        toolbar_click(w, "Save")
+        dismiss_validation(get_app())
+        log.info("    [updated] %s", label)
+    except Exception:
+        log.error("    Error updating doctor %s — closing window", label)
+        try:
+            close_window(main_win, "Doctor")
+        except Exception:
+            pass
+        raise
+    close_window(main_win, "Doctor")
+    time.sleep(T_SHORT)
+
+
 def ensure_all_doctors(a, main_win, existing_npis):
     log.info("")
     log.info("=" * 52)
@@ -354,16 +435,20 @@ def ensure_all_doctors(a, main_win, existing_npis):
     log.info("DB check: %d/%d doctor(s) already exist", len(existing_npis), len(DOCTORS))
 
     to_create = [d for d in DOCTORS if d["npi"] not in existing_npis]
-    to_skip   = [d for d in DOCTORS if d["npi"] in existing_npis]
-
-    for doc in to_skip:
-        log.info("  [SKIP]   NPI %s", doc["npi"])
-
-    if not to_create:
-        log.info("  All doctors already in DB — nothing to do")
-        return
+    to_update = [d for d in DOCTORS if d["npi"] in existing_npis]
 
     dismiss_popup(a)
+    for doc in to_update:
+        label = f"NPI {doc['npi']}"
+        log.info("  [UPDATE] %s", label)
+        if DRY_RUN:
+            log.info("    [DRY RUN] skipping UI — would update doctor")
+            continue
+        try:
+            update_doctor(doc, main_win, a)
+        except Exception as e:
+            log.error("  [ERROR]  %s — %s", label, e)
+
     for i, doc in enumerate(to_create, 1):
         label = f"NPI {doc['npi']}"
         set_status(f"[1/3] Doctor {i}/{len(to_create)}: NPI {doc['npi']}")
@@ -458,137 +543,185 @@ def add_insurance_row(pol_dialog, ins_company, ins_type, policy, group=""):
             pass
 
 
-def create_customer(p, main_win, a):
+def _fill_customer_form(dlg, p, main_win):
+    """Fill all fields in an open Customer edit form and save."""
     medicare_name = INSURANCE_BY_STATE.get(p["state"])
     if not medicare_name:
         raise ValueError(f"No DMERC mapping for state '{p['state']}'")
 
+    set_field(dlg, "txtLastName",   p["last"])
+    set_field(dlg, "txtFirstName",  p["first"])
+    set_field(dlg, "txtMiddleName", p["mi"])
+    set_field(dlg, "txtSuffix",     p["suffix"])
+
+    click_inner_tab(dlg, "General")
+    set_dob(dlg, p["dob"])
+    set_field(dlg, "txtAddress1", p["address1"])
+    set_field(dlg, "txtAddress2", p["address2"])
+    set_field(dlg, "txtCity",     p["city"])
+    set_field(dlg, "txtState",    p["state"])
+    set_field(dlg, "txtZip",      p["zip"])
+    set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
+
+    click_inner_tab(dlg, "Personal")
+    gender_val = p.get("gender") or "Male"
+    try:
+        dlg.child_window(auto_id="cmbGender", found_index=0).child_window(
+            auto_id="1001", found_index=0).set_edit_text(gender_val)
+        time.sleep(0.3)
+    except Exception as e:
+        log.warning("    [warn] Gender not set: %s", e)
+    try:
+        if p.get("height"):
+            dlg.child_window(auto_id="nmbHeight", found_index=0).child_window(
+                auto_id="txtInternal", found_index=0).set_edit_text(str(p["height"]))
+    except Exception as e:
+        log.warning("    [warn] Height not set: %s", e)
+    try:
+        if p.get("weight"):
+            dlg.child_window(auto_id="nmbWeight", found_index=0).child_window(
+                auto_id="txtInternal", found_index=0).set_edit_text(str(p["weight"]))
+    except Exception as e:
+        log.warning("    [warn] Weight not set: %s", e)
+    log.info("    General: %s, %s %s | DOB %s | gender=%s h=%s w=%s",
+             p["city"], p["state"], p["zip"], mask_dob(p["dob"]),
+             gender_val, p.get("height", ""), p.get("weight", ""))
+
+    click_inner_tab(dlg, "Contacts")
+    contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
+    set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
+                   p.get("doctor", ""))
+    log.info("    Doctor: assigned")
+
+    click_inner_tab(dlg, "Diagnosis")
+    dlg.child_window(auto_id="TabControl2", control_type="Tab",
+                     found_index=0).child_window(
+        title="ICD 10", control_type="TabItem").click_input()
+    time.sleep(T_MED)
+    icd_pane = dlg.child_window(auto_id="TabPage3", found_index=0)
+    for i, code in enumerate(p["icd10"], start=1):
+        try:
+            slot = icd_pane.child_window(auto_id=f"eddICD10_{i:02d}")
+            slot.child_window(auto_id="txtInternal").set_edit_text(code)
+            time.sleep(0.3)
+        except Exception as e:
+            log.warning("    ICD slot %d: %s", i, e)
+    log.info("    ICD-10: %d code(s)", len(p["icd10"]))
+
+    click_inner_tab(dlg, "Insurance")
+    ins_pane  = dlg.child_window(auto_id="tpInsurance", found_index=0)
+    ctrl_pane = ins_pane.child_window(auto_id="ControlCustomerInsurance1")
+    ctrl_pane.child_window(auto_id="Panel1").child_window(
+        auto_id="btnAdd").click_input()
+    time.sleep(T_LONG)
+    pol = find_mdi_child(main_win, "Policy Information")
+    if pol:
+        add_insurance_row(pol, medicare_name, "MEDICARE", p["mbi"])
+    else:
+        log.error("    Policy Information dialog not found (primary)")
+    if p.get("secondary"):
+        sec = p["secondary"]
+        ctrl_pane.child_window(auto_id="Panel1").child_window(
+            auto_id="btnAdd").click_input()
+        time.sleep(T_LONG)
+        pol2 = find_mdi_child(main_win, "Policy Information")
+        if pol2:
+            add_insurance_row(pol2, sec["ins_company"],
+                              sec["ins_type"], sec["policy"],
+                              sec.get("group", ""))
+        else:
+            log.error("    Policy Information dialog not found (secondary)")
+
+    if p.get("notes"):
+        click_inner_tab(dlg, "Notes")
+        try:
+            notes_pane = dlg.child_window(auto_id="tpNotes", found_index=0)
+            notes_ctrl = notes_pane.child_window(auto_id="ControlCustomerNotes1", found_index=0)
+            notes_ctrl.child_window(auto_id="btnAdd", found_index=0).click_input()
+            time.sleep(T_LONG)
+            # btnAdd opens FormCustomerNotes as a separate MDI child with no tlbMain toolbar
+            try:
+                notes_dlg = main_win.child_window(auto_id="FormCustomerNotes",
+                                                   control_type="Window", found_index=0)
+                notes_dlg.wait("visible", timeout=3)
+            except Exception:
+                notes_dlg = None
+            if notes_dlg:
+                entered = False
+                for aid in ("txtNotes", "memoNotes", "txtNote", "txtMemo", "txtText"):
+                    try:
+                        notes_dlg.child_window(auto_id=aid, found_index=0).set_edit_text(p["notes"])
+                        entered = True
+                        break
+                    except Exception:
+                        pass
+                if not entered:
+                    try:
+                        notes_dlg.child_window(control_type="Edit", found_index=0).set_edit_text(p["notes"])
+                        entered = True
+                    except Exception:
+                        pass
+                for btn in ("Save", "OK", "Close"):
+                    try:
+                        notes_dlg.child_window(title=btn, control_type="Button").click_input()
+                        time.sleep(T_SHORT)
+                        break
+                    except Exception:
+                        pass
+                if entered:
+                    log.info("    Notes: entered")
+                else:
+                    log.warning("    [warn] FormCustomerNotes open but text field unknown — probe needed")
+            else:
+                log.warning("    [warn] FormCustomerNotes not found after btnAdd — probe needed")
+        except Exception as e:
+            log.warning("    [warn] Notes not set: %s", e)
+
+    toolbar_click(dlg, "Save")
+    dismiss_validation(get_app())
+    log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
+
+
+def create_customer(p, main_win, a):
     dlg = open_fresh_window(main_win, a, "Customer", "Maintain->Customer")
     if not dlg:
         raise RuntimeError("Customer window not found")
-
     try:
         go_work_area(dlg)
         toolbar_click(dlg, "New")
         time.sleep(T_MED)
         dismiss_save_dialog(get_app())
-        dlg = main_win.child_window(auto_id="FormCustomer", control_type="Window",
-                                    found_index=0)
-
-        set_field(dlg, "txtLastName",   p["last"])
-        set_field(dlg, "txtFirstName",  p["first"])
-        set_field(dlg, "txtMiddleName", p["mi"])
-        set_field(dlg, "txtSuffix",     p["suffix"])
-
-        click_inner_tab(dlg, "General")
-        set_dob(dlg, p["dob"])
-        set_field(dlg, "txtAddress1", p["address1"])
-        set_field(dlg, "txtAddress2", p["address2"])
-        set_field(dlg, "txtCity",     p["city"])
-        set_field(dlg, "txtState",    p["state"])
-        set_field(dlg, "txtZip",      p["zip"])
-        set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
-
-        click_inner_tab(dlg, "Personal")
-        gender_val = p.get("gender") or "Male"
-        try:
-            dlg.child_window(auto_id="cmbGender", found_index=0).child_window(
-                auto_id="1001", found_index=0).set_edit_text(gender_val)
-            time.sleep(0.3)
-        except Exception as e:
-            log.warning("    [warn] Gender not set: %s", e)
-
-        try:
-            if p.get("height"):
-                dlg.child_window(auto_id="nmbHeight", found_index=0).child_window(
-                    auto_id="txtInternal", found_index=0).set_edit_text(str(p["height"]))
-        except Exception as e:
-            log.warning("    [warn] Height not set: %s", e)
-
-        try:
-            if p.get("weight"):
-                dlg.child_window(auto_id="nmbWeight", found_index=0).child_window(
-                    auto_id="txtInternal", found_index=0).set_edit_text(str(p["weight"]))
-        except Exception as e:
-            log.warning("    [warn] Weight not set: %s", e)
-
-        log.info("    General: %s, %s %s | DOB %s | gender=%s h=%s w=%s",
-                 p["city"], p["state"], p["zip"], mask_dob(p["dob"]),
-                 gender_val, p.get("height", ""), p.get("weight", ""))
-
-        click_inner_tab(dlg, "Contacts")
-        contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
-        set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
-                       p.get("doctor", ""))
-        log.info("    Doctor: assigned")
-
-        click_inner_tab(dlg, "Diagnosis")
-        dlg.child_window(auto_id="TabControl2", control_type="Tab",
-                         found_index=0).child_window(
-            title="ICD 10", control_type="TabItem").click_input()
-        time.sleep(T_MED)
-        icd_pane = dlg.child_window(auto_id="TabPage3", found_index=0)
-        for i, code in enumerate(p["icd10"], start=1):
-            try:
-                slot = icd_pane.child_window(auto_id=f"eddICD10_{i:02d}")
-                slot.child_window(auto_id="txtInternal").set_edit_text(code)
-                time.sleep(0.3)
-            except Exception as e:
-                log.warning("    ICD slot %d: %s", i, e)
-        log.info("    ICD-10: %d code(s)", len(p["icd10"]))
-
-        click_inner_tab(dlg, "Insurance")
-        ins_pane  = dlg.child_window(auto_id="tpInsurance", found_index=0)
-        ctrl_pane = ins_pane.child_window(auto_id="ControlCustomerInsurance1")
-
-        ctrl_pane.child_window(auto_id="Panel1").child_window(
-            auto_id="btnAdd").click_input()
-        time.sleep(T_LONG)
-        pol = find_mdi_child(main_win, "Policy Information")
-        if pol:
-            add_insurance_row(pol, medicare_name, "MEDICARE", p["mbi"])
-        else:
-            log.error("    Policy Information dialog not found (primary)")
-
-        if p.get("secondary"):
-            sec = p["secondary"]
-            ctrl_pane.child_window(auto_id="Panel1").child_window(
-                auto_id="btnAdd").click_input()
-            time.sleep(T_LONG)
-            pol2 = find_mdi_child(main_win, "Policy Information")
-            if pol2:
-                add_insurance_row(pol2, sec["ins_company"],
-                                  sec["ins_type"], sec["policy"],
-                                  sec.get("group", ""))
-            else:
-                log.error("    Policy Information dialog not found (secondary)")
-
-        if p.get("notes"):
-            click_inner_tab(dlg, "Notes")
-            try:
-                notes_pane = dlg.child_window(auto_id="tpNotes", found_index=0)
-                notes_ctrl = notes_pane.child_window(auto_id="ControlCustomerNotes1", found_index=0)
-                notes_ctrl.child_window(auto_id="btnAdd", found_index=0).click_input()
-                time.sleep(0.3)
-                notes_ctrl.child_window(title="Notes Row 0").type_keys(
-                    p["notes"], with_spaces=True)
-                log.info("    Notes: entered")
-            except Exception as e:
-                log.warning("    [warn] Notes not set: %s", e)
-
-        toolbar_click(dlg, "Save")
-        dismiss_validation(get_app())
-        log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
-
+        dlg = main_win.child_window(auto_id="FormCustomer", control_type="Window", found_index=0)
+        _fill_customer_form(dlg, p, main_win)
     except Exception:
         log.error("    Error mid-form for MBI %s — closing window", mask_mbi(p["mbi"]))
         try:
-            close_window(main_win, "Customer")
+            _close_customer(main_win)
         except Exception:
             pass
         raise
+    _close_customer(main_win)
 
-    close_window(main_win, "Customer")
+
+def update_customer(p, main_win, a):
+    dlg_w = open_fresh_window(main_win, a, "Customer", "Maintain->Customer")
+    if not dlg_w:
+        raise RuntimeError("Customer window not found")
+    try:
+        if not _search_and_open_work_area(dlg_w, p["last"]):
+            log.warning("    [warn] Could not open existing customer '%s' in UI", p["last"])
+            _close_customer(main_win)
+            return
+        dlg = main_win.child_window(auto_id="FormCustomer", control_type="Window", found_index=0)
+        _fill_customer_form(dlg, p, main_win)
+    except Exception:
+        log.error("    Error updating MBI %s — closing window", mask_mbi(p["mbi"]))
+        try:
+            _close_customer(main_win)
+        except Exception:
+            pass
+        raise
+    _close_customer(main_win)
 
 
 def ensure_all_customers(a, main_win, existing_mbis):
@@ -599,16 +732,26 @@ def ensure_all_customers(a, main_win, existing_mbis):
     log.info("DB check: %d/%d patient(s) already exist", len(existing_mbis), len(PATIENTS))
 
     to_create = [p for p in PATIENTS if p["mbi"] not in existing_mbis]
-    to_skip   = [p for p in PATIENTS if p["mbi"] in existing_mbis]
-
-    for p in to_skip:
-        log.info("  [SKIP]   MBI %s", mask_mbi(p["mbi"]))
-
-    if not to_create:
-        log.info("  All patients already in DB — nothing to do")
-        return
+    to_update = [p for p in PATIENTS if p["mbi"] in existing_mbis]
 
     dismiss_popup(a)
+    for p in to_update:
+        label = f"MBI {mask_mbi(p['mbi'])}"
+        log.info("")
+        log.info("  [UPDATE] %s", label)
+        if DRY_RUN:
+            log.info("    [DRY RUN] skipping UI — would update patient")
+            continue
+        try:
+            update_customer(p, main_win, a)
+            if p.get("_notion_page_id") and not UI_TEST:
+                try:
+                    notion.mark_in_dmeworks(_token, p["_notion_page_id"])
+                except Exception:
+                    _notion_retry.append(p["_notion_page_id"])
+        except Exception as e:
+            log.error("  [ERROR]  %s — %s", label, e)
+
     for i, p in enumerate(to_create, 1):
         label = f"MBI {mask_mbi(p['mbi'])}"
         set_status(f"[3/3] Patient {i}/{len(to_create)}: MBI {mask_mbi(p['mbi'])}")
