@@ -69,7 +69,7 @@ if UI_TEST:
     PATIENTS  = [_TEST_PATIENT]
     _ins_name = INSURANCE_BY_STATE.get(_TEST_PATIENT["state"], "")
     INSURANCE_COMPANIES = [{"name": _ins_name, "type": "MEDICARE"}] if _ins_name else []
-    db.configure("c01")
+    db.configure("c02")
 else:
     _raw = notion.fetch_work_queue(_token)
 
@@ -763,14 +763,14 @@ def run_verification():
 
 def main():
     if UI_TEST:
-        log.info("*** UI TEST MODE — test data only, target: c01 ***")
+        log.info("*** UI TEST MODE — test data only, target: c02 ***")
         set_status("UI Test — entry + SQL verify")
         log.info("=" * 52)
-        log.info("DMEworks UI Test — test patient/doctor, c01 only")
+        log.info("DMEworks UI Test — test patient/doctor, c02 only")
         log.info("=" * 52)
 
         log.info("")
-        log.info("Running DB existence checks (c01)...")
+        log.info("Running DB existence checks (c02)...")
         with ThreadPoolExecutor(max_workers=3) as pool:
             f_npis  = pool.submit(db.fetch_matching_npis,            [d["npi"]  for d in DOCTORS])
             f_names = pool.submit(db.fetch_matching_insurance_names, [c["name"] for c in INSURANCE_COMPANIES])

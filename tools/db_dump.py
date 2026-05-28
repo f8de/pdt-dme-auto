@@ -142,8 +142,8 @@ def rows_to_text(title: str, rows: list[dict]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Dump DMEworks audit queries to db_dump.txt")
-    parser.add_argument("--db", default="c02", choices=["c01", "c02"],
-                        help="Database to query (default: c02 production)")
+    parser.add_argument("--db", default="c02", choices=["c02"],
+                        help="Database to query (default: c02)")
     args = parser.parse_args()
 
     db.configure(args.db)

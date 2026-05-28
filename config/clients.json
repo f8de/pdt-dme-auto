@@ -2,9 +2,5 @@
   "allied": {
     "name": "Allied",
     "db": "c02"
-  },
-  "c01": {
-    "name": "Test (c01)",
-    "db": "c01"
   }
 }

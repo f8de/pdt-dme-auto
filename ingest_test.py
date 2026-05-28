@@ -1,12 +1,11 @@
 """
-DMEworks Ingest TEST — full pipeline verification against c01 (test database only).
+DMEworks Ingest TEST — full pipeline verification against c02.
 
-Inserts a synthetic test patient into c01, verifies field-level accuracy, and reports PASS/FAIL.
-All writes go to c01 ONLY — production (c02) is never touched.
+Inserts a synthetic test patient into c02, verifies field-level accuracy, and reports PASS/FAIL.
 
 Usage:
   python ingest_test.py          # dry-run: validates and shows what would happen
-  python ingest_test.py --live   # inserts test patient into c01, then verifies
+  python ingest_test.py --live   # inserts test patient into c02, then verifies
 """
 
 import argparse
@@ -42,8 +41,8 @@ _TEST_PATIENT = {
 
 
 def run() -> None:
-    p = argparse.ArgumentParser(description="DMEworks ingest test — c01 only")
-    p.add_argument("--live", action="store_true", help="Write test data to c01")
+    p = argparse.ArgumentParser(description="DMEworks ingest test — c02 only")
+    p.add_argument("--live", action="store_true", help="Write test data to c02")
     args = p.parse_args()
     dry_run = not args.live
 
@@ -53,8 +52,8 @@ def run() -> None:
 
     log = get_logger("ingest_test")
     log.info("=" * 60)
-    log.info("DMEworks Ingest TEST — c01 (TEST DATABASE ONLY)")
-    log.info("Mode: %s", "DRY-RUN" if dry_run else "LIVE WRITES → c01")
+    log.info("DMEworks Ingest TEST — c02 (TEST DATABASE ONLY)")
+    log.info("Mode: %s", "DRY-RUN" if dry_run else "LIVE WRITES → c02")
     log.info("Production (c02) is NOT touched.")
     log.info("=" * 60)
 
@@ -70,7 +69,7 @@ def run() -> None:
         log.error("NJ not in insurance map — check Notion Insurance DB has an active NJ entry")
         sys.exit(1)
 
-    db.configure("c01")
+    db.configure("c02")
 
     # Validate test patient data
     log.info("Validating test patient...")
@@ -95,16 +94,16 @@ def run() -> None:
 
     # Doctor
     if _TEST_NPI in existing_npis:
-        log.info("Doctor NPI %s already in c01 — SKIP", _TEST_NPI)
+        log.info("Doctor NPI %s already in c02 — SKIP", _TEST_NPI)
     else:
-        log.info("Doctor NPI %s not in c01 — %s", _TEST_NPI, "would INSERT" if dry_run else "inserting...")
+        log.info("Doctor NPI %s not in c02 — %s", _TEST_NPI, "would INSERT" if dry_run else "inserting...")
         db.insert_doctor(_TEST_DOCTOR, dry_run=dry_run)
 
     # Patient
     if _TEST_MBI in existing_mbis:
-        log.info("Patient %s already in c01 — SKIP (verifying existing record)", mask_mbi(_TEST_MBI))
+        log.info("Patient %s already in c02 — SKIP (verifying existing record)", mask_mbi(_TEST_MBI))
     else:
-        log.info("Patient %s not in c01 — %s", mask_mbi(_TEST_MBI), "would INSERT" if dry_run else "inserting...")
+        log.info("Patient %s not in c02 — %s", mask_mbi(_TEST_MBI), "would INSERT" if dry_run else "inserting...")
         try:
             db.insert_patient(_TEST_PATIENT, insurance_map, dry_run=dry_run)
         except Exception as e:
@@ -113,7 +112,7 @@ def run() -> None:
 
     if dry_run:
         log.info("")
-        log.info("DRY-RUN complete — no changes made to c01.")
+        log.info("DRY-RUN complete — no changes made to c02.")
         log.info("Run with --live to execute real writes and verify.")
         return
 
@@ -165,7 +164,7 @@ def run() -> None:
     rows = db.verify_patients([_TEST_PATIENT])
     row = rows.get(_TEST_MBI)
     if not row:
-        log.error("FAIL: patient %s not found in c01 after insert", mask_mbi(_TEST_MBI))
+        log.error("FAIL: patient %s not found in c02 after insert", mask_mbi(_TEST_MBI))
         sys.exit(1)
 
     issues: list[str] = []
@@ -231,7 +230,7 @@ def run() -> None:
 
     log.info("")
     log.info("RESULT: ALL CHECKS PASSED")
-    log.info("Test patient verified in c01. NPI=%s MBI=%s", _TEST_NPI, mask_mbi(_TEST_MBI))
+    log.info("Test patient verified in c02. NPI=%s MBI=%s", _TEST_NPI, mask_mbi(_TEST_MBI))
 
 
 if __name__ == "__main__":

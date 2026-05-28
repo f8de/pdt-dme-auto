@@ -32,11 +32,9 @@ tkinter, sqlite3, stdlib servers, test/dev tools, win32comext.
 
 | Code | Name      | Purpose          |
 |------|-----------|------------------|
-| c01  | test      | safe sandbox     |
 | c02  | allied    | production       |
 | dmeworks | shared | shared schema  |
 
-`ingest_test.py --live` writes to **c01 only**. `ingest.py` writes to **c02**.
 `db.configure(database)` must be called before any query — sets active DB for entire session,
 including which MIR stored procs are called.
 
@@ -45,10 +43,8 @@ including which MIR stored procs are called.
 ```bash
 pytest tests/                      # unit tests, no DB needed (all mocked)
 python ingest_test.py              # dry-run validation
-python ingest_test.py --live       # real writes to c01 + field-level verify
+python ingest_test.py --live       # real writes to c02 + field-level verify
 ```
-
-Never run `ingest_test.py --live` against c02.
 
 ## Key Rules
 
