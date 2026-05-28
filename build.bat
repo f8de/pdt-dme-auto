@@ -34,6 +34,18 @@ echo ==================================================
 echo   Started: %DATE% %TIME%
 echo.
 
+:: ─── REQUIREMENTS CHECK ──────────────────────────────────────────────────────
+echo Checking requirements...
+python -m pip install -r requirements.txt -q
+if %ERRORLEVEL% NEQ 0 (
+    echo   [FAILED]  pip install -r requirements.txt failed -- fix before building
+    echo ==================================================
+    echo.
+    exit /b 1
+)
+echo   [OK]  all requirements satisfied
+echo.
+
 :: ─── RUN BUILD ───────────────────────────────────────────────────────────────
 set BUILD_ARGS=%BUMP% %EXTRA_FLAGS%
 python build.py %BUILD_ARGS%
