@@ -1,5 +1,5 @@
 {
-  "_notes": "UI control registry for DMEworks automation. Update from probe output (python tools/map_customer_form.py). Mark unconfirmed entries with _confirmed: false.",
+  "_notes": "UI control registry for DMEworks automation. Update from probe output (python tools/map_customer_form.py → logs/customer_form_map.txt).",
 
   "app": {
     "title": "DMEWorks",
@@ -16,10 +16,10 @@
     "toolbar": "tlbMain",
     "name_pane": {
       "fields": {
-        "last":    { "auto_id": "txtLastName" },
-        "first":   { "auto_id": "txtFirstName" },
-        "mi":      { "auto_id": "txtMiddleName" },
-        "suffix":  { "auto_id": "txtSuffix" }
+        "last":   { "auto_id": "txtLastName" },
+        "first":  { "auto_id": "txtFirstName" },
+        "mi":     { "auto_id": "txtMiddleName" },
+        "suffix": { "auto_id": "txtSuffix" }
       }
     },
     "tabs": {
@@ -58,45 +58,51 @@
     "toolbar": "tlbMain",
     "name_pane": {
       "auto_id": "CName",
+      "parent": "Panel1",
       "fields": {
         "last":     { "auto_id": "txtLastName" },
         "first":    { "auto_id": "txtFirstName" },
         "mi":       { "auto_id": "txtMiddleName" },
         "suffix":   { "auto_id": "txtSuffix" },
-        "courtesy": { "auto_id": "cmbCourtesy", "type": "combo" }
+        "courtesy": { "auto_id": "cmbCourtesy", "type": "combo", "inner_auto_id": "1001" }
       }
     },
+    "tab_control": "TabControl1",
     "tabs": {
       "General": {
         "pane_id": "tpGeneral",
         "fields": {
           "dob":      { "auto_id": "dtbDateofBirth", "type": "date" },
-          "address1": { "auto_id": "txtAddress1" },
-          "address2": { "auto_id": "txtAddress2" },
-          "city":     { "auto_id": "txtCity" },
-          "state":    { "auto_id": "txtState" },
-          "zip":      { "auto_id": "txtZip" },
-          "phone":    { "auto_id": "txtPhone", "format": "phone" }
+          "address1": { "auto_id": "txtAddress1", "parent_pane": "CAddress" },
+          "address2": { "auto_id": "txtAddress2", "parent_pane": "CAddress" },
+          "city":     { "auto_id": "txtCity",     "parent_pane": "CAddress" },
+          "state":    { "auto_id": "txtState",    "parent_pane": "CAddress" },
+          "zip":      { "auto_id": "txtZip",      "parent_pane": "CAddress" },
+          "phone":    { "auto_id": "txtPhone", "format": "phone" },
+          "phone2":   { "auto_id": "txtPhone2" },
+          "email":    { "auto_id": "txtEmail" }
         }
       },
-      "Personal": {
-        "_confirmed": false,
-        "_note": "Run map_customer_form.py probe to confirm auto_ids",
-        "fields": {
-          "gender": { "auto_id": "cmbGender", "type": "combo", "_confirmed": false },
-          "height": { "auto_id": "txtHeight", "_confirmed": false },
-          "weight": { "auto_id": "txtWeight", "_confirmed": false }
-        }
+      "Notes": {
+        "pane_id": "tpNotes",
+        "control": "ControlCustomerNotes1",
+        "add_button": "btnAdd",
+        "_note": "Notes grid — click btnAdd then type into 'Notes Row 0' cell"
       },
       "Contacts": {
         "pane_id": "tpContacts",
         "fields": {
-          "doctor1": { "auto_id": "cmbDoctor1", "type": "combo_search" }
+          "doctor1":  { "auto_id": "cmbDoctor1",  "type": "combo_search", "inner_auto_id": "cmbInternal" },
+          "doctor2":  { "auto_id": "cmbDoctor2",  "type": "combo_search", "inner_auto_id": "cmbInternal" },
+          "facility": { "auto_id": "cmbFacility", "type": "combo_search", "inner_auto_id": "cmbInternal" },
+          "emergency_contact": { "auto_id": "txtEmergencyContact" }
         }
       },
       "Diagnosis": {
+        "pane_id": "tpDiagnosis",
         "tab_control": "TabControl2",
-        "tab_pane": "TabPage3",
+        "icd10_tab": "ICD 10",
+        "icd10_pane": "TabPage3",
         "icd10_slots": {
           "auto_id_pattern": "eddICD10_{nn}",
           "inner_auto_id": "txtInternal",
@@ -119,6 +125,31 @@
             "ok":     { "auto_id": "btnOK" },
             "cancel": { "auto_id": "btnCancel" }
           }
+        }
+      },
+      "Personal": {
+        "pane_id": "tpPersonal",
+        "fields": {
+          "gender":               { "auto_id": "cmbGender",              "type": "combo",       "inner_auto_id": "1001" },
+          "height":               { "auto_id": "nmbHeight",              "type": "numeric_pane", "inner_auto_id": "txtInternal" },
+          "weight":               { "auto_id": "nmbWeight",              "type": "numeric_pane", "inner_auto_id": "txtInternal" },
+          "delivery_directions":  { "auto_id": "txtDeliveryDirections" },
+          "ssn":                  { "auto_id": "txtSSNumber" },
+          "license":              { "auto_id": "txtLicense" },
+          "marital_status":       { "auto_id": "cmbMaritalStatus",       "type": "combo", "inner_auto_id": "1001" },
+          "employment_status":    { "auto_id": "cmbEmploymentStatus",    "type": "combo", "inner_auto_id": "1001" },
+          "student_status":       { "auto_id": "cmbStudentStatus",       "type": "combo", "inner_auto_id": "1001" },
+          "military_branch":      { "auto_id": "cmbMilitaryBranch",      "type": "combo", "inner_auto_id": "1001" },
+          "military_status":      { "auto_id": "cmbMilitaryStatus",      "type": "combo", "inner_auto_id": "1001" }
+        }
+      },
+      "Billing": {
+        "pane_id": "tpAssignment",
+        "fields": {
+          "signature_on_file": { "auto_id": "dtbSignatureOnFile", "type": "date" },
+          "signature_type":    { "auto_id": "cmbSignatureType",   "type": "combo", "inner_auto_id": "1001" },
+          "hippa_note":        { "auto_id": "chbHIPPANote",       "type": "checkbox" },
+          "supplier_standards":{ "auto_id": "chbSupplierStandards","type": "checkbox" }
         }
       }
     }

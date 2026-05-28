@@ -489,15 +489,28 @@ def create_customer(p, main_win, a):
         set_field(dlg, "txtZip",      p["zip"])
         set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
 
+        click_inner_tab(dlg, "Personal")
         gender_val = p.get("gender") or "Male"
         try:
-            dlg.child_window(auto_id="cmbGender", found_index=0).select(gender_val)
+            dlg.child_window(auto_id="cmbGender", found_index=0).child_window(
+                auto_id="1001", found_index=0).set_edit_text(gender_val)
             time.sleep(0.3)
         except Exception as e:
             log.warning("    [warn] Gender not set: %s", e)
 
-        set_field(dlg, "txtHeight", p.get("height", ""))
-        set_field(dlg, "txtWeight", p.get("weight", ""))
+        try:
+            if p.get("height"):
+                dlg.child_window(auto_id="nmbHeight", found_index=0).child_window(
+                    auto_id="txtInternal", found_index=0).set_edit_text(str(p["height"]))
+        except Exception as e:
+            log.warning("    [warn] Height not set: %s", e)
+
+        try:
+            if p.get("weight"):
+                dlg.child_window(auto_id="nmbWeight", found_index=0).child_window(
+                    auto_id="txtInternal", found_index=0).set_edit_text(str(p["weight"]))
+        except Exception as e:
+            log.warning("    [warn] Weight not set: %s", e)
 
         log.info("    General: %s, %s %s | DOB %s | gender=%s h=%s w=%s",
                  p["city"], p["state"], p["zip"], mask_dob(p["dob"]),
