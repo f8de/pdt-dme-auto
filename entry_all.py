@@ -563,6 +563,19 @@ def create_customer(p, main_win, a):
             else:
                 log.error("    Policy Information dialog not found (secondary)")
 
+        if p.get("notes"):
+            click_inner_tab(dlg, "Notes")
+            try:
+                notes_pane = dlg.child_window(auto_id="tpNotes", found_index=0)
+                notes_ctrl = notes_pane.child_window(auto_id="ControlCustomerNotes1", found_index=0)
+                notes_ctrl.child_window(auto_id="btnAdd", found_index=0).click_input()
+                time.sleep(0.3)
+                notes_ctrl.child_window(title="Notes Row 0").type_keys(
+                    p["notes"], with_spaces=True)
+                log.info("    Notes: entered")
+            except Exception as e:
+                log.warning("    [warn] Notes not set: %s", e)
+
         toolbar_click(dlg, "Save")
         dismiss_validation(get_app())
         log.info("    [saved] MBI %s", mask_mbi(p["mbi"]))
