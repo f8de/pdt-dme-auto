@@ -67,6 +67,7 @@ a = Analysis(
     datas=pw_d + ct_d + w32_d + [
         (os.path.join(ROOT, "config", "database_reference.json"), "config"),
         (os.path.join(ROOT, "config", "clients.json"), "config"),
+        (os.path.join(ROOT, "config", "dmeworks_ui_map.json"), "config"),
     ],
     hiddenimports=pw_h + ct_h + w32_h + mc_h + [
         "mysql",

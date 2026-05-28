@@ -1,0 +1,126 @@
+{
+  "_notes": "UI control registry for DMEworks automation. Update from probe output (python tools/map_customer_form.py). Mark unconfirmed entries with _confirmed: false.",
+
+  "app": {
+    "title": "DMEWorks",
+    "auto_id": "FormMain",
+    "popups": {
+      "compliance": { "title": "Compliance Popup", "auto_id": "FormCompliancePopup", "close_button": "Close" },
+      "save_dialog_no": { "title": "No", "control_type": "Button" }
+    }
+  },
+
+  "doctor": {
+    "menu_path": "Maintain->Doctor",
+    "form_keyword": "Doctor",
+    "toolbar": "tlbMain",
+    "name_pane": {
+      "fields": {
+        "last":    { "auto_id": "txtLastName" },
+        "first":   { "auto_id": "txtFirstName" },
+        "mi":      { "auto_id": "txtMiddleName" },
+        "suffix":  { "auto_id": "txtSuffix" }
+      }
+    },
+    "tabs": {
+      "Address": {
+        "fields": {
+          "address1": { "auto_id": "txtAddress1" },
+          "address2": { "auto_id": "txtAddress2" },
+          "city":     { "auto_id": "txtCity" },
+          "state":    { "auto_id": "txtState" },
+          "zip":      { "auto_id": "txtZip" },
+          "phone":    { "auto_id": "txtPhone", "format": "phone" }
+        }
+      },
+      "Numbers": {
+        "fields": {
+          "npi": { "auto_id": "txtNPI" },
+          "fax": { "auto_id": "txtFax", "_confirmed": false }
+        }
+      }
+    }
+  },
+
+  "insurance_company": {
+    "menu_path": "Maintain->Insurance Company",
+    "form_keyword": "Insurance Company",
+    "toolbar": "tlbMain",
+    "fields": {
+      "name": { "auto_id": "txtName" }
+    }
+  },
+
+  "customer": {
+    "menu_path": "Maintain->Customer",
+    "form_keyword": "Customer",
+    "form_auto_id": "FormCustomer",
+    "toolbar": "tlbMain",
+    "name_pane": {
+      "auto_id": "CName",
+      "fields": {
+        "last":     { "auto_id": "txtLastName" },
+        "first":    { "auto_id": "txtFirstName" },
+        "mi":       { "auto_id": "txtMiddleName" },
+        "suffix":   { "auto_id": "txtSuffix" },
+        "courtesy": { "auto_id": "cmbCourtesy", "type": "combo" }
+      }
+    },
+    "tabs": {
+      "General": {
+        "pane_id": "tpGeneral",
+        "fields": {
+          "dob":      { "auto_id": "dtbDateofBirth", "type": "date" },
+          "address1": { "auto_id": "txtAddress1" },
+          "address2": { "auto_id": "txtAddress2" },
+          "city":     { "auto_id": "txtCity" },
+          "state":    { "auto_id": "txtState" },
+          "zip":      { "auto_id": "txtZip" },
+          "phone":    { "auto_id": "txtPhone", "format": "phone" }
+        }
+      },
+      "Personal": {
+        "_confirmed": false,
+        "_note": "Run map_customer_form.py probe to confirm auto_ids",
+        "fields": {
+          "gender": { "auto_id": "cmbGender", "type": "combo", "_confirmed": false },
+          "height": { "auto_id": "txtHeight", "_confirmed": false },
+          "weight": { "auto_id": "txtWeight", "_confirmed": false }
+        }
+      },
+      "Contacts": {
+        "pane_id": "tpContacts",
+        "fields": {
+          "doctor1": { "auto_id": "cmbDoctor1", "type": "combo_search" }
+        }
+      },
+      "Diagnosis": {
+        "tab_control": "TabControl2",
+        "tab_pane": "TabPage3",
+        "icd10_slots": {
+          "auto_id_pattern": "eddICD10_{nn}",
+          "inner_auto_id": "txtInternal",
+          "count": 12
+        }
+      },
+      "Insurance": {
+        "pane_id": "tpInsurance",
+        "control_pane": "ControlCustomerInsurance1",
+        "add_button_pane": "Panel1",
+        "add_button": "btnAdd",
+        "policy_dialog": {
+          "fields": {
+            "insurance_company": { "auto_id": "cmbInsuranceCompany", "type": "combo_search" },
+            "insurance_type":    { "auto_id": "cmbInsuranceType",    "type": "combo_search" },
+            "policy_number":     { "auto_id": "txtPolicyNumber" },
+            "group_number":      { "auto_id": "txtGroupNumber" }
+          },
+          "buttons": {
+            "ok":     { "auto_id": "btnOK" },
+            "cancel": { "auto_id": "btnCancel" }
+          }
+        }
+      }
+    }
+  }
+}
