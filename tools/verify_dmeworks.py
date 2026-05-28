@@ -226,6 +226,21 @@ def _verify_patients(cur, patients: list[dict]) -> tuple[list[tuple], dict]:
                           " | ".join(n_icd10) or "(none)",
                           " | ".join(m_icd10) or "(none)"))
 
+        # Notes — stored in tbl_customer_notes, display only
+        n_notes = _norm(p.get("notes", ""))
+        if n_notes:
+            cur.execute(
+                "SELECT Notes FROM tbl_customer_notes WHERE CustomerID = %s AND Active = 1",
+                (row["ID"],)
+            )
+            db_notes = " | ".join(
+                _norm(r["Notes"]) for r in cur.fetchall() if r.get("Notes")
+            )
+            if n_notes != db_notes:
+                n_disp = (n_notes[:40] + "...") if len(n_notes) > 40 else n_notes
+                m_disp = (db_notes[:40] + "...") if len(db_notes) > 40 else db_notes or "(none)"
+                diffs.append(("Notes", "__skip__", None, n_disp, m_disp))
+
         if diffs:
             log.info("patient %s (ID=%s) — %d field(s) differ: %s",
                      name, row["ID"], len(diffs), [f for f, *_ in diffs])
