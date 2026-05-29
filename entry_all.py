@@ -286,7 +286,7 @@ def set_status(msg: str) -> None:
 
 
 T_SHORT = 0.15
-T_MED   = 0.3
+T_MED   = 0.4
 T_LONG  = 0.7
 
 # ─── PRE-VALIDATION ───────────────────────────────────────────────────────────
@@ -368,6 +368,12 @@ def dismiss_validation(a):
     return False
 
 def find_mdi_child(main, keyword):
+    try:
+        w = main.child_window(title_re=f".*{keyword}.*", control_type="Window", found_index=0)
+        if w.exists(timeout=0.1):
+            return w
+    except Exception:
+        pass
     try:
         for child in main.descendants(control_type="Window"):
             try:
@@ -560,7 +566,7 @@ def set_dob(win, dob_str):
         rect = dob.wrapper_object().rectangle()
         h = rect.bottom - rect.top
         dob.click_input(coords=(6, h // 2))
-        time.sleep(0.2)
+        time.sleep(0.35)
         for _ in range(4):
             keyboard.send_keys("{LEFT}")
             time.sleep(0.03)
@@ -868,6 +874,7 @@ def _clear_insurance_rows(ctrl_pane):
             if not row.exists(timeout=0.1):
                 break
             row.click_input()
+            time.sleep(0.1)
             btn_del.click_input()
             time.sleep(0.2)
             cleared += 1
