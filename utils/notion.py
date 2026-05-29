@@ -107,6 +107,30 @@ def fetch_all_doctors(token: str) -> list[dict]:
     return doctors
 
 
+def fetch_doctor_by_npi(token: str, npi: str) -> dict | None:
+    """Return a single doctor record from the Doctors DB matching NPI, or None."""
+    url     = f"{_BASE}/databases/{_DOCTORS_DB_ID}/query"
+    payload = {"filter": {"property": "NPI", "rich_text": {"equals": npi}}}
+    data    = _request("post", url, _headers(token), json=payload).json()
+    for page in data["results"]:
+        d = _parse_doctor_page(page)
+        if d:
+            return d
+    return None
+
+
+def fetch_patient_by_mbi(token: str, mbi: str) -> dict | None:
+    """Return a single patient record from the Patients DB matching MBI, or None."""
+    url     = f"{_BASE}/databases/{_PATIENT_DB_ID}/query"
+    payload = {"filter": {"property": "MBI", "rich_text": {"equals": mbi}}}
+    data    = _request("post", url, _headers(token), json=payload).json()
+    for page in data["results"]:
+        p = _parse_patient(token, page)
+        if p:
+            return p
+    return None
+
+
 def fetch_all_insurance(token: str) -> list[dict]:
     """Return all insurance company records from the Insurance DB."""
     url     = f"{_BASE}/databases/{_INSURANCE_DB_ID}/query"

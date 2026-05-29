@@ -64,7 +64,8 @@ _token             = get_notion_token()
 INSURANCE_BY_STATE = notion.fetch_insurance_map(_token)
 
 if UI_TEST:
-    from ingest_test import _TEST_PATIENT, _TEST_DOCTOR
+    from ingest_test import fetch_test_fixtures
+    _TEST_DOCTOR, _TEST_PATIENT = fetch_test_fixtures(_token)
     DOCTORS   = [_TEST_DOCTOR]
     PATIENTS  = [_TEST_PATIENT]
     _ins_name = INSURANCE_BY_STATE.get(_TEST_PATIENT["state"], "")
