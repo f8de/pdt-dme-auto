@@ -387,6 +387,30 @@ def find_mdi_child(main, keyword):
         pass
     return None
 
+
+def _wait_ctrl(parent, timeout=3.0, **kwargs) -> bool:
+    """Poll every 50 ms until a child control exists. Returns True when found."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if parent.child_window(**kwargs).exists(timeout=0):
+                return True
+        except Exception:
+            pass
+        time.sleep(0.05)
+    return False
+
+
+def _wait_mdi(main, keyword, timeout=5.0):
+    """Poll every 100 ms until an MDI child matching keyword appears. Returns window or None."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        w = find_mdi_child(main, keyword)
+        if w:
+            return w
+        time.sleep(0.1)
+    return None
+
 def set_field(win, auto_id, value):
     if not value:
         return
@@ -429,25 +453,29 @@ def open_fresh_window(main_win, a, keyword, menu_path):
         close_window(main_win, keyword)
         time.sleep(T_MED)
     a.top_window().menu_select(menu_path)
-    time.sleep(T_LONG)
     dismiss_save_dialog(a)
     dismiss_popup(a)
-    return find_mdi_child(main_win, keyword)
+    return _wait_mdi(main_win, keyword, timeout=6.0)
 
 def go_work_area(w):
     try:
         w.child_window(auto_id="PageControl", control_type="Tab",
                        found_index=0).child_window(
             title="Work Area", control_type="TabItem").click_input()
-        time.sleep(T_MED)
+        if not _wait_ctrl(w, auto_id="tlbMain", control_type="ToolBar", timeout=2.0):
+            time.sleep(T_MED)
     except Exception as e:
         log.warning("go_work_area: %s", e)
 
-def click_inner_tab(w, title):
+def click_inner_tab(w, title, anchor_auto_id=None):
     w.child_window(auto_id="TabControl1", control_type="Tab",
                    found_index=0).child_window(
         title=title, control_type="TabItem").click_input()
-    time.sleep(T_MED)
+    if anchor_auto_id:
+        if not _wait_ctrl(w, auto_id=anchor_auto_id, timeout=2.0):
+            time.sleep(T_MED)
+    else:
+        time.sleep(T_MED)
 
 def _search_and_open_work_area(w, last_name, npi=None):
     """Filter the Search tab grid by last name and double-click the matching row."""
@@ -482,7 +510,8 @@ def _search_and_open_work_area(w, last_name, npi=None):
                     found_index=0).window_text() or ""
                 if last_name.lower() in cell_val.lower():
                     row.double_click_input()
-                    time.sleep(T_LONG)
+                    if not _wait_ctrl(w, auto_id="txtLastName", timeout=4.0):
+                        time.sleep(T_LONG)
                     return True
             except Exception:
                 # Can't read cell text — fall through to Row 0 fallback
@@ -490,7 +519,8 @@ def _search_and_open_work_area(w, last_name, npi=None):
         # Fallback: Row 0 should be the top result after filtering
         grid.child_window(title="Row 0", control_type="Custom",
                           found_index=0).double_click_input()
-        time.sleep(T_LONG)
+        if not _wait_ctrl(w, auto_id="txtLastName", timeout=4.0):
+            time.sleep(T_LONG)
         return True
     except Exception as e:
         log.warning("    [warn] Search grid not found or row not clickable: %s", e)
@@ -531,13 +561,12 @@ def _set_doctor_by_find(contacts_pane, doc, main_win):
     try:
         doc1_pane = contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0)
         doc1_pane.child_window(auto_id="btnFind", found_index=0).click_input()
-        time.sleep(T_MED)
         find_dlg = None
         for kw in ("Doctor", "Find", "Search"):
             try:
                 cand = main_win.child_window(title_re=f".*{kw}.*",
                                              control_type="Window", found_index=0)
-                if cand.exists(timeout=1):
+                if cand.exists(timeout=0.5):
                     find_dlg = cand
                     break
             except Exception:
@@ -551,10 +580,13 @@ def _set_doctor_by_find(contacts_pane, doc, main_win):
                 find_dlg.child_window(control_type="Edit", found_index=0).set_edit_text(last)
             except Exception:
                 pass
-        time.sleep(T_MED)
+        _wait_ctrl(find_dlg, title="Row 0", control_type="Custom", timeout=2.0)
         find_dlg.child_window(title="Row 0", control_type="Custom",
                               found_index=0).double_click_input()
-        time.sleep(T_MED)
+        try:
+            find_dlg.wait_not("visible", timeout=2.0)
+        except Exception:
+            time.sleep(T_MED)
         log.info("    Doctor: Find dialog selected (%s %s)", first, last)
     except Exception as e:
         log.warning("    _set_doctor_by_find failed (%s), falling back to combo: %s", last, e)
@@ -661,7 +693,7 @@ def create_doctor(doc, main_win, a):
         set_field(w, "txtMiddleName", doc["mi"])
         set_field(w, "txtSuffix",     doc["suffix"])
 
-        click_inner_tab(w, "Address")
+        click_inner_tab(w, "Address", anchor_auto_id="txtAddress1")
         set_field(w, "txtAddress1", doc["address1"])
         set_field(w, "txtAddress2", doc["address2"])
         set_field(w, "txtCity",     doc["city"])
@@ -670,7 +702,7 @@ def create_doctor(doc, main_win, a):
         set_field(w, "txtPhone",    fmt_phone(doc["phone"]))
         set_field(w, "txtFax",      fmt_phone(doc.get("fax", "")))
 
-        click_inner_tab(w, "Numbers")
+        click_inner_tab(w, "Numbers", anchor_auto_id="txtNPI")
         set_field(w, "txtNPI", doc["npi"])
 
         toolbar_click(w, "Save")
@@ -708,7 +740,7 @@ def update_doctor(doc, main_win, a, groups=None):
             set_field(w, "txtSuffix",     doc["suffix"])
 
         if "address" in groups:
-            click_inner_tab(w, "Address")
+            click_inner_tab(w, "Address", anchor_auto_id="txtAddress1")
             set_field(w, "txtAddress1", doc["address1"])
             set_field(w, "txtAddress2", doc["address2"])
             set_field(w, "txtCity",     doc["city"])
@@ -718,7 +750,7 @@ def update_doctor(doc, main_win, a, groups=None):
             set_field(w, "txtFax",      fmt_phone(doc.get("fax", "")))
 
         if "numbers" in groups:
-            click_inner_tab(w, "Numbers")
+            click_inner_tab(w, "Numbers", anchor_auto_id="txtNPI")
             set_field(w, "txtNPI", doc["npi"])
 
         toolbar_click(w, "Save")
@@ -873,10 +905,21 @@ def _clear_insurance_rows(ctrl_pane):
             row  = grid.child_window(title="Row 0", control_type="Custom", found_index=0)
             if not row.exists(timeout=0.1):
                 break
+            try:
+                n_before = len(grid.children(control_type="Custom"))
+            except Exception:
+                n_before = 99
             row.click_input()
             time.sleep(0.1)
             btn_del.click_input()
-            time.sleep(0.2)
+            _dl = time.monotonic() + 2.0
+            while time.monotonic() < _dl:
+                try:
+                    if len(grid.children(control_type="Custom")) < n_before:
+                        break
+                except Exception:
+                    break
+                time.sleep(0.05)
             cleared += 1
         except Exception:
             break
@@ -898,7 +941,7 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
     set_field(dlg, "txtSuffix",     p["suffix"])
 
     if "general" in groups:
-        click_inner_tab(dlg, "General")
+        click_inner_tab(dlg, "General", anchor_auto_id="dtbDateofBirth")
         set_dob(dlg, p["dob"])
         set_field(dlg, "txtAddress1", p["address1"])
         set_field(dlg, "txtAddress2", p["address2"])
@@ -908,7 +951,7 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
         set_field(dlg, "txtPhone",    fmt_phone(p["phone"]))
 
     if "personal" in groups:
-        click_inner_tab(dlg, "Personal")
+        click_inner_tab(dlg, "Personal", anchor_auto_id="cmbGender")
         gender_val = p.get("gender") or "Male"
         try:
             dlg.child_window(auto_id="cmbGender", found_index=0).child_window(
@@ -932,7 +975,7 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
                  p.get("gender") or "Male", p.get("height", ""), p.get("weight", ""))
 
     if "contacts" in groups:
-        click_inner_tab(dlg, "Contacts")
+        click_inner_tab(dlg, "Contacts", anchor_auto_id="tpContacts")
         contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
         _doc = p.get("_doctor") or {}
         _set_doctor_by_find(contacts_pane, _doc, main_win)
@@ -944,7 +987,7 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
             pass
 
     if "diagnosis" in groups:
-        click_inner_tab(dlg, "Diagnosis")
+        click_inner_tab(dlg, "Diagnosis", anchor_auto_id="TabControl2")
         dlg.child_window(auto_id="TabControl2", control_type="Tab",
                          found_index=0).child_window(
             title="ICD 10", control_type="TabItem").click_input()
@@ -960,15 +1003,14 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
         log.info("    ICD-10: %d code(s)", len(p["icd10"]))
 
     if "insurance" in groups:
-        click_inner_tab(dlg, "Insurance")
+        click_inner_tab(dlg, "Insurance", anchor_auto_id="ControlCustomerInsurance1")
         ins_pane  = dlg.child_window(auto_id="tpInsurance", found_index=0)
         ctrl_pane = ins_pane.child_window(auto_id="ControlCustomerInsurance1")
         if is_update:
             _clear_insurance_rows(ctrl_pane)
         ctrl_pane.child_window(auto_id="Panel1").child_window(
             auto_id="btnAdd").click_input()
-        time.sleep(0.5)
-        pol = find_mdi_child(main_win, "Policy Information")
+        pol = _wait_mdi(main_win, "Policy Information", timeout=5.0)
         if pol:
             add_insurance_row(pol, medicare_name, "MEDICARE", p["mbi"])
         else:
@@ -977,8 +1019,7 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
             sec = p["secondary"]
             ctrl_pane.child_window(auto_id="Panel1").child_window(
                 auto_id="btnAdd").click_input()
-            time.sleep(0.5)
-            pol2 = find_mdi_child(main_win, "Policy Information")
+            pol2 = _wait_mdi(main_win, "Policy Information", timeout=5.0)
             if pol2:
                 add_insurance_row(pol2, sec["ins_company"],
                                   sec["ins_type"], sec["policy"],
@@ -987,13 +1028,11 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
                 log.error("    Policy Information dialog not found (secondary)")
 
     if "notes" in groups and p.get("notes"):
-        click_inner_tab(dlg, "Notes")
+        click_inner_tab(dlg, "Notes", anchor_auto_id="ControlCustomerNotes1")
         try:
             notes_pane = dlg.child_window(auto_id="tpNotes", found_index=0)
             notes_ctrl = notes_pane.child_window(auto_id="ControlCustomerNotes1", found_index=0)
             notes_ctrl.child_window(auto_id="btnAdd", found_index=0).click_input()
-            time.sleep(T_LONG)
-            # btnAdd opens FormCustomerNotes as a separate MDI child with no tlbMain toolbar
             try:
                 notes_dlg = main_win.child_window(auto_id="FormCustomerNotes",
                                                    control_type="Window", found_index=0)
