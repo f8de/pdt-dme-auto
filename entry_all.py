@@ -907,12 +907,18 @@ def run_verification():
                 except (ValueError, TypeError):
                     issues.append(f"{field.title()} comparison failed (DB='{db_val}' Notion='{notion_val}')")
 
+        if p.get("notes") and row.get("customer_id"):
+            notes_rows = db.verify_patient_notes(row["customer_id"])
+            notes_texts = [r["Notes"] for r in notes_rows]
+            if p["notes"] not in notes_texts:
+                issues.append(f"notes not found in tbl_customer_notes (got {len(notes_rows)} row(s))")
+
         if issues:
             for issue in issues:
                 log.warning("    [WARN] %s — %s", label, issue)
             all_pass = False
         else:
-            log.info("    [PASS] %s — all fields match, doctor assigned", label)
+            log.info("    [PASS] %s — all fields match, doctor assigned, notes verified", label)
 
     log.info("")
     if all_pass:

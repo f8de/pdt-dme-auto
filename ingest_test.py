@@ -31,7 +31,7 @@ _TEST_PATIENT = {
     "address1": "1 Test Street", "address2": "Apt 000", "city": "Test City",
     "state": "NJ", "zip": "00000", "phone": "5550000002",
     "gender": "Male", "height": "70", "weight": "160",
-    "icd10": ["M54.5"],
+    "icd10": ["M54.5", "E11.9", "I10", "J44.1"],
     "secondary": None,
     "notes": "Test note — automated ingest verification.",
     "doctor": f"{_TEST_DOCTOR['first']} {_TEST_DOCTOR['last']}",
