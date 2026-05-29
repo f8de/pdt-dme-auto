@@ -7,6 +7,7 @@ In frozen (EXE) mode, tools are dispatched by re-invoking the EXE with
 so that each tool runs in a fresh process with the correct sys.argv.
 """
 
+import ctypes
 import os
 import subprocess
 import sys
@@ -283,197 +284,229 @@ def _launch_dmeworks() -> bool:
     return False
 
 
-# ── tools submenu ────────────────────────────────────────────────────────────
+# ── ANSI helpers ─────────────────────────────────────────────────────────────
 
-def _tools_menu(dmeworks_ok: bool, pywinauto_ok: bool) -> None:
-    tools_ok = dmeworks_ok and pywinauto_ok
+def _ansi_setup():
+    try:
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        ctypes.windll.kernel32.SetConsoleMode(
+            ctypes.windll.kernel32.GetStdHandle(-11), 7)
+    except Exception:
+        pass
+
+
+def _clear():
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+
+
+def _menu_frame(title, rows, IN=58):
+    BD = "\033[1m"; RS = "\033[0m"; CY = "\033[96m"; WH = "\033[97m"
+
+    def _top(): return f"{CY}╔{'═' * IN}╗{RS}"
+    def _mid(): return f"{CY}╠{'═' * IN}╣{RS}"
+    def _bot(): return f"{CY}╚{'═' * IN}╝{RS}"
+    def _row(plain="", styled=""):
+        pad = IN - 2 - len(plain)
+        return f"{CY}║{RS}  {styled}{' ' * max(0, pad)}{CY}║{RS}"
+
+    t_pad     = (IN - len(title)) // 2
+    title_row = (f"{CY}║{RS}{' ' * t_pad}{BD}{WH}{title}{RS}"
+                 f"{' ' * (IN - t_pad - len(title))}{CY}║{RS}")
+
     print()
-    print("=" * 60)
-    print("  Tools  (DMEWorks must be open)")
-    print("=" * 60)
+    print(_top())
+    print(title_row)
+    print(_mid())
+    for item in rows:
+        if item is None:
+            print(_row())
+        else:
+            print(_row(*item))
+    print(_bot())
     print()
-    if not tools_ok:
-        print("  [!]  DMEWorks is not running — these tools require it.")
-        print()
-    print("  [1]  Map policy dialog       —  maps Policy Information controls")
-    print("  [2]  Map insurance company   —  maps Insurance Company form controls")
-    print("  [3]  Grid probe              —  probes DataGridView cell reading")
-    print("  [4]  DB Audit               —  dump all tables to tools/db_dump.txt")
-    print("  [5]  Map customer form       —  discover Customer form control IDs")
-    print("  [6]  Map doctor form         —  discover Doctor form control IDs")
-    print()
-    print("  [B]  Back")
-    print()
+
+
+# ── tools submenu ─────────────────────────────────────────────────────────────
+
+def _tools_menu() -> None:
+    BD = "\033[1m"; RS = "\033[0m"; YL = "\033[93m"; WH = "\033[97m"; DM = "\033[2m\033[37m"
+
+    tools = [
+        ("1", "DB Dump",       "db_audit",           "Dump DB records to file"),
+        ("2", "Verify DB",     "verify",              "Detailed Notion vs DB audit"),
+        ("3", "Fix via UI",    "fix_ui",              "Standalone diff + UI correction"),
+        ("4", "Map Customer",  "map_customer_form",   "Dump Customer form controls"),
+        ("5", "Map Doctor",    "map_doctor_form",     "Dump Doctor form controls"),
+        ("6", "Map Insurance", "map_insurance",       "Dump Insurance form controls"),
+        ("7", "Map Policy",    "map_policy",          "Dump Policy dialog controls"),
+        ("8", "Grid Probe",    "grid_probe",          "Probe grid cell reading"),
+    ]
 
     while True:
-        try:
-            choice = _read_key()
-        except (KeyboardInterrupt, EOFError):
-            print()
-            return
+        _clear()
+        rows = [None]
+        for num, name, _, desc in tools:
+            plain  = f"{num}   {name:<14} {desc}"
+            styled = f"{YL}{BD}{num}{RS}   {WH}{BD}{name:<14}{RS} {DM}{desc}{RS}"
+            rows.append((plain, styled))
+        rows.append(None)
+        rows.append(("0   Back", f"{YL}{BD}0{RS}   {WH}{BD}Back{RS}"))
+        rows.append(None)
+        _menu_frame("Tools", rows)
 
-        if choice == "b":
+        mapping = {t[0]: (t[1], t[2]) for t in tools}
+        try:
+            raw = input(f"  {WH}Choice{RS} {DM}[0–8]{RS}:  ").strip()
+        except (KeyboardInterrupt, EOFError):
             return
-        elif choice in ("1", "2", "3", "5", "6") and not tools_ok:
-            print("  DMEWorks must be open to use these tools.")
-        elif choice == "1":
-            _launch("map_policy", [])
+        if raw == "0" or raw == "":
             return
-        elif choice == "2":
-            _launch("map_insurance", [])
+        if raw not in mapping:
+            continue
+
+        tname, tmode = mapping[raw]
+        print(f"\n  Starting {tname}...\n")
+        _launch(tmode, [])
+        try:
+            input(f"\n  {DM}Press Enter to return to menu...{RS}")
+        except (KeyboardInterrupt, EOFError):
             return
-        elif choice == "3":
-            _launch("grid_probe", [])
-            return
-        elif choice == "4":
-            _launch("db_audit", [])
-            return
-        elif choice == "5":
-            _launch("map_customer_form", [])
-            return
-        elif choice == "6":
-            _launch("map_doctor_form", [])
-            return
-        else:
-            print("  Enter 1–6 or B.")
 
 
 # ── main menu ─────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    print()
-    print("=" * 60)
-    print("  DMEworks Automation Launcher")
-    print("=" * 60)
-    print()
-    print("  Checking prerequisites...")
-    print()
+    _ansi_setup()
 
-    checks   = check_prereqs()
-    for name, ok, detail in checks:
-        print(f"  [{'OK' if ok else 'FAIL'}]  {name:<22} {detail}")
+    BD = "\033[1m"; RS = "\033[0m"; YL = "\033[93m"; WH = "\033[97m"; DM = "\033[2m\033[37m"
 
-    print()
+    # prereq check on startup (and after each return)
+    def _refresh():
+        chks        = check_prereqs()
+        dme_ok      = any(ok for n, ok, _ in chks if "DMEWorks" in n)
+        pw_ok       = any(ok for n, ok, _ in chks if "pywinauto" in n)
+        sq_ok       = any(ok for n, ok, _ in chks if "SQL" in n)
+        return chks, dme_ok, pw_ok, sq_ok
 
-    dmeworks_ok  = all(ok for name, ok, _ in checks if "DMEWorks" in name)
-    pywinauto_ok = any(ok for name, ok, _ in checks if "pywinauto" in name)
-    # pywinauto warning only — verify works without it
-    other_ok     = all(ok for name, ok, _ in checks
-                       if "DMEWorks"  not in name
-                       and "pywinauto" not in name)
+    print("  Checking prerequisites...", flush=True)
+    checks, dmeworks_ok, pywinauto_ok, sql_ok = _refresh()
+    ui_ok = dmeworks_ok and pywinauto_ok
 
-    if not other_ok:
-        print("  Fix failed checks before running.")
+    if not sql_ok:
+        _clear()
         print()
-        _exe_dir = os.path.dirname(sys.executable) if _FROZEN else SCRIPT_DIR
-        _crash   = os.path.join(_exe_dir, "crash.log")
-        try:
-            with open(_crash, "w", encoding="utf-8") as _f:
-                _f.write("Prereq check failed:\n")
-                for name, ok, detail in checks:
-                    status = "OK" if ok else "FAIL"
-                    _f.write(f"  [{status}]  {name}: {detail}\n")
-            print(f"  Details written to: {_crash}")
-        except Exception:
-            pass
+        print("  SQL connection failed — check Doppler credentials and network.")
+        print()
+        for n, ok, detail in checks:
+            mark = "\033[92mOK\033[0m" if ok else "\033[91mFAIL\033[0m"
+            print(f"  [{mark}]  {n:<22} {detail}")
+        print()
         try:
             input("  Press Enter to exit...")
         except (EOFError, KeyboardInterrupt):
             pass
         sys.exit(1)
 
-    if not dmeworks_ok:
-        if pywinauto_ok:
-            print("  DMEWorks not running.")
-            try:
-                launch_choice = input("  Launch DMEWorks now? [y/N]: ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                launch_choice = "n"
-            if launch_choice == "y":
-                dmeworks_ok = _launch_dmeworks()
-                if dmeworks_ok:
-                    print("  DMEWorks ready.")
-                else:
-                    print("  Could not confirm DMEWorks is ready — entry options unavailable.")
-                    print("  Verification (option 3) is still available.")
-            else:
-                print("  Entry options unavailable. Verification (option 3) is still available.")
-        else:
-            print("  DMEWorks not running — entry options unavailable.")
-            print("  Verification (option 3) is still available.")
-    else:
-        print("  All checks passed.")
-    print()
-
-    print("  Entry  (DMEWorks required)")
-    print("  [1]  UI field test  —  fill all forms in DMEWorks, no saves")
-    print("  [2]  Full entry     —  Allied")
-    print()
-    print("  Verification")
-    print("  [3]  Audit          —  compare Notion vs DMEworks (report only)")
-    print("  [4]  Fix via UI     —  report diffs and correct via DMEworks UI  (DMEWorks required)")
-    print()
-    print("  [T]  Tools        —  diagnostic utilities")
-    print("  [0]  Exit")
-    print()
+    # (num, label, dispatch_mode, base_args, needs_ui, has_dry_run, description)
+    modes = [
+        ("1", "Test",  "entry_all", ["--mode", "test"],  True,  False, "Fill all forms — full UI field test"),
+        ("2", "Run",   "entry_all", ["--mode", "run"],   True,  True,  "Enter Notion queue into Allied"),
+        ("3", "Audit", "entry_all", ["--mode", "audit"], False, False, "Compare Notion vs DB — no writes"),
+        ("4", "Fix",   "entry_all", ["--mode", "fix"],   True,  True,  "Correct audit diffs via DMEworks UI"),
+    ]
 
     while True:
+        _clear()
+
+        dme_tag = f"\033[92mopen\033[0m"      if dmeworks_ok else f"\033[91mnot running\033[0m"
+        sql_tag = f"\033[92mconnected\033[0m" if sql_ok      else f"\033[91mfailed\033[0m"
+        status_plain  = f"DB: {'connected' if sql_ok else 'failed'}   DMEworks: {'open' if dmeworks_ok else 'not running'}"
+        status_styled = f"{DM}DB: {sql_tag}   DMEworks: {dme_tag}{RS}"
+
+        rows = [None]
+        for num, label, _, _, needs_ui, _, desc in modes:
+            note   = f"  {DM}(DMEworks required){RS}" if needs_ui and not ui_ok else ""
+            plain  = f"{num}   {label:<7} {desc}"
+            styled = f"{YL}{BD}{num}{RS}   {WH}{BD}{label:<7}{RS} {DM}{desc}{RS}{note}"
+            rows.append((plain, styled))
+        rows.append(None)
+        rows.append(("5   Tools   Developer & diagnostic tools ›",
+                     f"{YL}{BD}5{RS}   {WH}{BD}Tools{RS}   {DM}Developer & diagnostic tools ›{RS}"))
+        rows.append(None)
+        rows.append((status_plain, status_styled))
+        rows.append(None)
+        rows.append(("0   Exit", f"{YL}{BD}0{RS}   {WH}{BD}Exit{RS}"))
+        rows.append(None)
+        _menu_frame("DMEworks Automation — Allied Medical Health", rows)
+
         try:
-            choice = _read_key()
+            raw = input(f"  {WH}Choice{RS} {DM}[0–5]{RS}:  ").strip()
         except (KeyboardInterrupt, EOFError):
             print()
             sys.exit(0)
 
-        if choice == "0":
-            print()
+        if raw == "0":
             sys.exit(0)
-        elif choice not in ("1", "2", "3", "4", "t"):
-            print("  Enter 1, 2, 3, 4, T, or 0.")
+        if raw == "5":
+            _tools_menu()
+            checks, dmeworks_ok, pywinauto_ok, sql_ok = _refresh()
+            ui_ok = dmeworks_ok and pywinauto_ok
+            continue
+        if not raw:
             continue
 
-        try:
-            if choice == "1":
-                if not (dmeworks_ok and pywinauto_ok):
-                    print("  DMEWorks must be running for the UI field test.")
-                    continue
-                _launch("entry_all", ["--ui-test"])
+        match = next((m for m in modes if m[0] == raw), None)
+        if not match:
+            continue
 
-            elif choice == "2":
+        num, label, dispatch, base_args, needs_ui, has_dry_run, _ = match
+
+        if needs_ui and not ui_ok:
+            if pywinauto_ok and not dmeworks_ok:
+                print()
                 try:
-                    mode = input("  Live writes (real DB changes) or dry-run? [live/DRY]: ").strip().lower()
+                    yn = input("  DMEworks not running. Launch now? [y/N]:  ").strip().lower()
                 except (EOFError, KeyboardInterrupt):
-                    mode = "dry"
-                extra = ["--live"] if mode == "live" else []
-                _launch("ingest", extra)
-
-            elif choice == "3":
-                _launch("verify", [])
-
-            elif choice == "4":
-                if not (dmeworks_ok and pywinauto_ok):
-                    print("  DMEWorks must be running to fix records via the UI.")
                     continue
-                _launch("fix_ui", [])
+                if yn == "y":
+                    dmeworks_ok = _launch_dmeworks()
+                    ui_ok = dmeworks_ok and pywinauto_ok
+                if not ui_ok:
+                    print(f"  {DM}DMEworks not ready — cannot run this option.{RS}")
+                    try:
+                        input("  Press Enter to continue...")
+                    except (EOFError, KeyboardInterrupt):
+                        pass
+                    continue
+            else:
+                print(f"\n  {DM}DMEworks must be running for this option.{RS}")
+                try:
+                    input("  Press Enter to continue...")
+                except (EOFError, KeyboardInterrupt):
+                    pass
+                continue
 
-            elif choice == "t":
-                _tools_menu(dmeworks_ok, pywinauto_ok)
-
-        except (KeyboardInterrupt, EOFError):
+        extra_args = list(base_args)
+        if has_dry_run:
             print()
-            sys.exit(0)
+            try:
+                yn = input(f"  {WH}Dry run{RS} {DM}(preview without writing)? [y/N]{RS}:  ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                continue
+            if yn == "y":
+                extra_args.append("--dry-run")
 
-        print()
-        print("  Entry  (DMEWorks required)")
-        print("  [1]  UI field test  —  fill all forms in DMEWorks, no saves")
-        print("  [2]  Full entry     —  Allied")
-        print()
-        print("  Verification")
-        print("  [3]  Audit          —  compare Notion vs DMEworks (report only)")
-        print("  [4]  Fix via UI     —  report diffs and correct via DMEworks UI  (DMEWorks required)")
-        print()
-        print("  [T]  Tools        —  diagnostic utilities")
-        print("  [0]  Exit")
-        print()
+        print(f"\n  Starting {label}...\n")
+        _launch(dispatch, extra_args)
+
+        try:
+            input(f"\n  {DM}Press Enter to return to menu...{RS}")
+        except (KeyboardInterrupt, EOFError):
+            pass
+
+        checks, dmeworks_ok, pywinauto_ok, sql_ok = _refresh()
+        ui_ok = dmeworks_ok and pywinauto_ok
 
 
 if __name__ == "__main__":
