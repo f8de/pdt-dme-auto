@@ -505,6 +505,13 @@ def main() -> None:
                 continue
             if yn == "y":
                 extra_args.append("--dry-run")
+            elif label == "Run":
+                try:
+                    confirm = _read_key(f"  {WH}Confirm live run{RS} {DM}(writes to Allied)? [y/N]{RS}:  ")
+                except (KeyboardInterrupt, EOFError):
+                    continue
+                if confirm != "y":
+                    continue
 
         print(f"\n  Starting {label}...\n")
         _launch(dispatch, extra_args)
