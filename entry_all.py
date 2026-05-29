@@ -285,9 +285,9 @@ def set_status(msg: str) -> None:
     _set_title(f"DME Auto — {msg}")
 
 
-T_SHORT = 0.2
-T_MED   = 0.5
-T_LONG  = 1.0
+T_SHORT = 0.15
+T_MED   = 0.3
+T_LONG  = 0.7
 
 # ─── PRE-VALIDATION ───────────────────────────────────────────────────────────
 
@@ -358,7 +358,7 @@ def dismiss_validation(a):
     for frag in ["validation", "error", "warning"]:
         try:
             dlg = a.window(title_re=f".*{frag}.*")
-            if dlg.exists(timeout=0.3):
+            if dlg.exists(timeout=0.15):
                 log.warning("Validation dialog: %s", dlg.window_text())
                 dlg.child_window(title="OK", control_type="Button").click_input()
                 time.sleep(T_SHORT)
@@ -386,7 +386,7 @@ def set_field(win, auto_id, value):
         return
     try:
         win.child_window(auto_id=auto_id, found_index=0).set_edit_text(value)
-        time.sleep(0.2)
+        time.sleep(0.08)
     except Exception as e:
         log.warning("set_field(%s): %s", auto_id, e)
 
@@ -498,19 +498,19 @@ def set_combo_text(pane, value):
     try:
         combo = pane.child_window(auto_id="cmbInternal", found_index=0)
         combo.click_input()
-        time.sleep(0.3)
+        time.sleep(0.15)
         try:
             combo.select(value)
-            time.sleep(0.2)
+            time.sleep(0.1)
             return
         except Exception:
             pass
         combo.type_keys("^a", with_spaces=False)
-        time.sleep(0.1)
+        time.sleep(0.05)
         combo.type_keys(value, with_spaces=True)
-        time.sleep(0.5)
-        combo.type_keys("{ENTER}")
         time.sleep(0.3)
+        combo.type_keys("{ENTER}")
+        time.sleep(0.15)
     except Exception as e:
         log.warning("set_combo_text('%s'): %s", value, e)
 
@@ -560,18 +560,18 @@ def set_dob(win, dob_str):
         rect = dob.wrapper_object().rectangle()
         h = rect.bottom - rect.top
         dob.click_input(coords=(6, h // 2))
-        time.sleep(0.4)
+        time.sleep(0.2)
         for _ in range(4):
             keyboard.send_keys("{LEFT}")
-            time.sleep(0.05)
-        time.sleep(0.2)
+            time.sleep(0.03)
+        time.sleep(0.1)
         mm, dd, yyyy = dob_str.split("/")
         keyboard.send_keys(mm)
-        time.sleep(0.3)
+        time.sleep(0.15)
         keyboard.send_keys(dd)
-        time.sleep(0.3)
+        time.sleep(0.15)
         keyboard.send_keys(yyyy)
-        time.sleep(0.3)
+        time.sleep(0.15)
     except Exception as e:
         log.warning("set_dob: %s", e)
 
@@ -857,23 +857,24 @@ def add_insurance_row(pol_dialog, ins_company, ins_type, policy, group=""):
 
 def _clear_insurance_rows(ctrl_pane):
     panel   = ctrl_pane.child_window(auto_id="Panel1")
+    btn_del = panel.child_window(auto_id="btnDelete", found_index=0)
     cleared = 0
     log.info("    Insurance: clearing existing rows...")
+    a = get_app()
     for _ in range(10):
         try:
             grid = ctrl_pane.child_window(control_type="Table", found_index=0)
             row  = grid.child_window(title="Row 0", control_type="Custom", found_index=0)
-            if not row.exists(timeout=0.3):
+            if not row.exists(timeout=0.1):
                 break
             row.click_input()
-            time.sleep(T_SHORT)
-            panel.child_window(auto_id="btnDelete", found_index=0).click_input()
-            time.sleep(T_MED)
-            dismiss_validation(get_app())
+            btn_del.click_input()
+            time.sleep(0.2)
             cleared += 1
         except Exception:
             break
     if cleared:
+        dismiss_validation(a)
         log.info("    Insurance: cleared %d existing row(s)", cleared)
 
 
@@ -959,7 +960,7 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
             _clear_insurance_rows(ctrl_pane)
         ctrl_pane.child_window(auto_id="Panel1").child_window(
             auto_id="btnAdd").click_input()
-        time.sleep(T_LONG)
+        time.sleep(0.5)
         pol = find_mdi_child(main_win, "Policy Information")
         if pol:
             add_insurance_row(pol, medicare_name, "MEDICARE", p["mbi"])
@@ -969,7 +970,7 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
             sec = p["secondary"]
             ctrl_pane.child_window(auto_id="Panel1").child_window(
                 auto_id="btnAdd").click_input()
-            time.sleep(T_LONG)
+            time.sleep(0.5)
             pol2 = find_mdi_child(main_win, "Policy Information")
             if pol2:
                 add_insurance_row(pol2, sec["ins_company"],
