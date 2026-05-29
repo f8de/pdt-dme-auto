@@ -111,9 +111,9 @@ def set_status(msg: str) -> None:
     _set_title(f"DME Auto — {msg}")
 
 
-T_SHORT = 0.3
-T_MED   = 0.7
-T_LONG  = 1.2
+T_SHORT = 0.2
+T_MED   = 0.5
+T_LONG  = 1.0
 
 # ─── PRE-VALIDATION ───────────────────────────────────────────────────────────
 
@@ -324,21 +324,83 @@ def set_combo_text(pane, value):
     try:
         combo = pane.child_window(auto_id="cmbInternal", found_index=0)
         combo.click_input()
-        time.sleep(0.5)
+        time.sleep(0.3)
         try:
             combo.select(value)
-            time.sleep(0.5)
+            time.sleep(0.2)
             return
         except Exception:
             pass
         combo.type_keys("^a", with_spaces=False)
-        time.sleep(0.2)
+        time.sleep(0.1)
         combo.type_keys(value, with_spaces=True)
-        time.sleep(0.8)
-        combo.type_keys("{ENTER}")
         time.sleep(0.5)
+        combo.type_keys("{ENTER}")
+        time.sleep(0.3)
     except Exception as e:
         log.warning("set_combo_text('%s'): %s", value, e)
+
+
+def _set_doctor_by_find(contacts_pane, doc, main_win):
+    """Select doctor via cmbDoctor1 btnFind dialog for unambiguous selection.
+    Falls back to last-name combo search if the Find dialog can't be navigated."""
+    last  = (doc.get("last") or "").strip()
+    first = (doc.get("first") or "").strip()
+    if not last:
+        return
+    try:
+        doc1_pane = contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0)
+        doc1_pane.child_window(auto_id="btnFind", found_index=0).click_input()
+        time.sleep(T_MED)
+        find_dlg = None
+        for kw in ("Doctor", "Find", "Search"):
+            try:
+                cand = main_win.child_window(title_re=f".*{kw}.*",
+                                             control_type="Window", found_index=0)
+                if cand.exists(timeout=1):
+                    find_dlg = cand
+                    break
+            except Exception:
+                pass
+        if not find_dlg:
+            raise RuntimeError("Find dialog not found after btnFind click")
+        # Filter by last name
+        try:
+            find_dlg.child_window(auto_id="txtFilter", found_index=0).set_edit_text(last)
+        except Exception:
+            try:
+                find_dlg.child_window(control_type="Edit", found_index=0).set_edit_text(last)
+            except Exception:
+                pass
+        time.sleep(T_MED)
+        # Scan grid for first-name match; Row 0 fallback
+        grid = find_dlg.child_window(auto_id="Grid", control_type="Table", found_index=0)
+        selected = False
+        for row_idx in range(20):
+            row_title = f"Row {row_idx}"
+            try:
+                row = grid.child_window(title=row_title, control_type="Custom", found_index=0)
+            except Exception:
+                break
+            try:
+                fn_cell = row.child_window(
+                    title=f"First Name {row_title}", control_type="Edit", found_index=0)
+                if first.lower() in (fn_cell.window_text() or "").lower():
+                    row.double_click_input()
+                    time.sleep(T_MED)
+                    selected = True
+                    log.info("    Doctor: Find dialog selected (%s %s)", first, last)
+                    break
+            except Exception:
+                pass
+        if not selected:
+            grid.child_window(title="Row 0", control_type="Custom",
+                              found_index=0).double_click_input()
+            time.sleep(T_MED)
+            log.info("    Doctor: Find dialog Row 0 fallback (%s)", last)
+    except Exception as e:
+        log.warning("    _set_doctor_by_find failed (%s), falling back to combo: %s", last, e)
+        set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0), last)
 
 def set_dob(win, dob_str):
     try:
@@ -607,20 +669,16 @@ def _fill_customer_form(dlg, p, main_win):
              p["city"], p["state"], p["zip"], mask_dob(p["dob"]),
              gender_val, p.get("height", ""), p.get("weight", ""))
 
-    click_inner_tab(dlg, "Contacts")
+    # tpContacts is a permanent side panel — always visible, no tab click needed
     contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
     _doc = p.get("_doctor") or {}
-    _doc_search = _doc.get("last") or (p["doctor"].split()[-1] if p.get("doctor") else "")
-    set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
-                   _doc_search)
-    # Dismiss any combo-triggered popup and re-acquire dlg in case form refreshed
+    _set_doctor_by_find(contacts_pane, _doc, main_win)
     dismiss_popup(get_app())
     time.sleep(T_SHORT)
     try:
         dlg = main_win.child_window(auto_id="FormCustomer", control_type="Window", found_index=0)
     except Exception:
         pass
-    log.info("    Doctor: assigned (%s)", _doc_search)
 
     click_inner_tab(dlg, "Diagnosis")
     dlg.child_window(auto_id="TabControl2", control_type="Tab",
@@ -632,7 +690,7 @@ def _fill_customer_form(dlg, p, main_win):
         try:
             slot = icd_pane.child_window(auto_id=f"eddICD10_{i:02d}")
             slot.child_window(auto_id="txtInternal").set_edit_text(code)
-            time.sleep(0.3)
+            time.sleep(0.1)
         except Exception as e:
             log.warning("    ICD slot %d: %s", i, e)
     log.info("    ICD-10: %d code(s)", len(p["icd10"]))
