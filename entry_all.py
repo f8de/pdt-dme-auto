@@ -909,11 +909,11 @@ def _clear_insurance_rows(ctrl_pane):
             time.sleep(0.1)
             btn_del.click_input()
             time.sleep(0.3)
+            dismiss_validation(a)
             cleared += 1
         except Exception:
             break
     if cleared:
-        dismiss_validation(a)
         log.info("    Insurance: cleared %d existing row(s)", cleared)
 
 
