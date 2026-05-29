@@ -268,57 +268,54 @@ def click_inner_tab(w, title):
         title=title, control_type="TabItem").click_input()
     time.sleep(T_MED)
 
-def _search_and_open_work_area(w, last_name):
-    """Filter work area by last name and double-click the first matching row. Returns True if opened."""
-    go_work_area(w)
-    time.sleep(T_MED)
+def _search_and_open_work_area(w, last_name, npi=None):
+    """Use the Search tab + toolbar Search button to load an existing record into Work Area."""
+    # Click the Search tab on PageControl
+    try:
+        w.child_window(auto_id="PageControl", control_type="Tab", found_index=0).child_window(
+            title="Search", control_type="TabItem").click_input()
+        time.sleep(T_MED)
+    except Exception as e:
+        log.warning("    [warn] Search tab not found: %s", e)
+        return False
 
-    filtered = False
-    for aid in ("txtLastName", "txtSearch", "edtLastName", "edtSearch", "txtName", "edtName"):
+    # Fill NPI first (most unique), then last name as fallback
+    if npi:
         try:
-            fld = w.child_window(auto_id=aid, found_index=0)
-            fld.set_edit_text(last_name)
+            w.child_window(auto_id="txtNPI", found_index=0).set_edit_text(npi)
             time.sleep(0.3)
-            filtered = True
+        except Exception:
+            pass
+
+    for aid in ("txtLastName", "txtSearch", "edtLastName"):
+        try:
+            w.child_window(auto_id=aid, found_index=0).set_edit_text(last_name)
+            time.sleep(0.3)
             break
         except Exception:
             pass
 
-    if filtered:
+    # Click the Search toolbar button
+    try:
+        w.child_window(auto_id="tlbMain", control_type="ToolBar", found_index=0).child_window(
+            title="Search", control_type="Button").click_input()
+        time.sleep(T_LONG)
+    except Exception:
         keyboard.send_keys("{ENTER}")
         time.sleep(T_LONG)
-        for btn in ("Find", "Search", "Go"):
-            try:
-                w.child_window(title=btn, control_type="Button").click_input()
-                time.sleep(T_LONG)
-                break
-            except Exception:
-                pass
 
-    # Scan multiple control types; prefer text match, fall back to first row if filtered
-    for ct in ("DataItem", "ListItem", "TreeItem", "Custom"):
+    # If a result list appeared, pick the first row
+    for ct in ("DataItem", "ListItem"):
         try:
             items = list(w.descendants(control_type=ct))
-            for item in items:
-                try:
-                    if last_name.lower() in (item.window_text() or "").lower():
-                        item.double_click_input()
-                        time.sleep(T_LONG)
-                        return True
-                except Exception:
-                    pass
-            if filtered and items:
-                try:
-                    items[0].double_click_input()
-                    time.sleep(T_LONG)
-                    return True
-                except Exception:
-                    pass
+            if items:
+                items[0].double_click_input()
+                time.sleep(T_LONG)
+                break
         except Exception:
             pass
 
-    log.warning("    [warn] Record '%s' not found in work area — probe work area to map search controls", last_name)
-    return False
+    return True
 
 # ─── COMBO AND DOB ────────────────────────────────────────────────────────────
 
@@ -415,7 +412,7 @@ def update_doctor(doc, main_win, a):
     if not w:
         raise RuntimeError(f"Doctor window not found for {label}")
     try:
-        if not _search_and_open_work_area(w, doc["last"]):
+        if not _search_and_open_work_area(w, doc["last"], npi=doc["npi"]):
             log.warning("  [warn] Could not open existing doctor %s in UI", label)
             close_window(main_win, "Doctor")
             return

@@ -89,12 +89,25 @@ def main():
 
         log(f"\nDoctor form found: '{w.window_text()}'")
 
-        # ── SECTION 1: Work Area (list view) ──────────────────────────────
+        page_ctrl = w.child_window(auto_id="PageControl", control_type="Tab", found_index=0)
+
+        # ── SECTION 1: Search tab ──────────────────────────────────────────
         log("\n" + "=" * 60)
-        log("SECTION 1: WORK AREA (list view + search controls)")
+        log("SECTION 1: SEARCH TAB (search/filter controls)")
         log("=" * 60)
         try:
-            page_ctrl = w.child_window(auto_id="PageControl", control_type="Tab", found_index=0)
+            page_ctrl.child_window(title="Search", control_type="TabItem").click_input()
+            time.sleep(T_MED)
+            log("\nSearch tab clicked — dumping controls:\n")
+            dump_controls(w, f.write)
+        except Exception as e:
+            log(f"Search tab error: {e}")
+
+        # ── SECTION 2: Work Area tab ───────────────────────────────────────
+        log("\n" + "=" * 60)
+        log("SECTION 2: WORK AREA TAB (edit form controls)")
+        log("=" * 60)
+        try:
             page_ctrl.child_window(title="Work Area", control_type="TabItem").click_input()
             time.sleep(T_MED)
             log("\nWork Area tab clicked — dumping controls:\n")
@@ -104,9 +117,9 @@ def main():
             log("\nFalling back to full window dump:\n")
             dump_controls(w, f.write)
 
-        # ── SECTION 2: Open a record and map each tab ──────────────────────
+        # ── SECTION 3: Open a record and map each tab ──────────────────────
         log("\n" + "=" * 60)
-        log("SECTION 2: RECORD EDIT FORM — clicking New to open edit view")
+        log("SECTION 3: RECORD EDIT FORM — clicking New to open edit view")
         log("=" * 60)
         try:
             tb = w.child_window(auto_id="tlbMain", control_type="ToolBar", found_index=0)
