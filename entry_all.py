@@ -608,9 +608,11 @@ def _fill_customer_form(dlg, p, main_win):
 
     click_inner_tab(dlg, "Contacts")
     contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
+    _doc_search = (p.get("_doctor") or {}).get("last") or (
+        p["doctor"].split()[-1] if p.get("doctor") else "")
     set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
-                   p.get("doctor", ""))
-    log.info("    Doctor: assigned")
+                   _doc_search)
+    log.info("    Doctor: assigned (%s)", _doc_search)
 
     click_inner_tab(dlg, "Diagnosis")
     dlg.child_window(auto_id="TabControl2", control_type="Tab",
