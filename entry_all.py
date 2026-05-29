@@ -859,7 +859,12 @@ def run_verification():
         if (row["state"] or "").strip().upper() != p["state"].upper():
             issues.append(f"State DB='{row['state']}' record='{p['state']}'")
 
-        if not row.get("doctor_npi"):
+        expected_npi = (p.get("_doctor") or {}).get("npi")
+        actual_npi   = (row.get("doctor_npi") or "").strip()
+        if expected_npi:
+            if actual_npi != expected_npi:
+                issues.append(f"Doctor NPI DB='{actual_npi}' expected='{expected_npi}'")
+        elif not actual_npi:
             issues.append("no doctor assigned (Doctor1_ID is NULL)")
 
         db_gender = (row.get("gender") or "").strip()

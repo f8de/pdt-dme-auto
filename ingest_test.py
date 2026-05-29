@@ -34,7 +34,7 @@ _TEST_PATIENT = {
     "icd10": ["M54.5", "E11.9", "I10", "J44.1"],
     "secondary": None,
     "notes": "Test note — automated ingest verification.",
-    "doctor": f"{_TEST_DOCTOR['first']} {_TEST_DOCTOR['last']}",
+    "doctor": _TEST_DOCTOR["last"],
     "_doctor": {"npi": _TEST_NPI},
     "_notion_page_id": None,
 }
