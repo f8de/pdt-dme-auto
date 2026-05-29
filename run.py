@@ -128,18 +128,27 @@ def _launch(mode: str, extra_args: list[str]) -> None:
 
 # ── single-keypress input ────────────────────────────────────────────────────
 
-def _read_key(prompt: str = "  > ") -> str:
-    """Read one keypress without requiring Enter (Windows msvcrt; fallback: readline)."""
+def _read_key(prompt: str = "  > ", timeout: int = 0) -> str:
+    """Read one keypress without requiring Enter (Windows msvcrt; fallback: readline).
+    If timeout > 0 and no key is pressed within that many seconds, exits cleanly."""
     print(prompt, end="", flush=True)
     try:
         import msvcrt
+        import time
+        deadline = time.monotonic() + timeout if timeout > 0 else None
         while True:
-            ch = msvcrt.getwch()
-            if ch in ("\x00", "\xe0"):
-                msvcrt.getwch()   # consume second byte of function/arrow key
-                continue
-            print(ch)
-            return ch.lower()
+            if msvcrt.kbhit():
+                ch = msvcrt.getwch()
+                if ch in ("\x00", "\xe0"):
+                    msvcrt.getwch()
+                    continue
+                print(ch)
+                return ch.lower()
+            if deadline and time.monotonic() >= deadline:
+                print()
+                print("\n  No input — closing.")
+                sys.exit(0)
+            time.sleep(0.05)
     except ImportError:
         return input().strip().lower()
 
@@ -441,7 +450,7 @@ def main() -> None:
         _menu_frame("DMEworks Automation — Allied Medical Health", rows)
 
         try:
-            raw = _read_key(f"  {WH}Choice{RS} {DM}[0–5]{RS}:  ")
+            raw = _read_key(f"  {WH}Choice{RS} {DM}[0–5]{RS}:  ", timeout=300)
         except (KeyboardInterrupt, EOFError):
             print()
             sys.exit(0)
