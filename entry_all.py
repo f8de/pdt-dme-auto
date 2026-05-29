@@ -610,13 +610,16 @@ def _fill_customer_form(dlg, p, main_win):
     click_inner_tab(dlg, "Contacts")
     contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
     _doc = p.get("_doctor") or {}
-    _doc_search = (
-        f"{_doc['last']}, {_doc['first']}" if _doc.get("last") and _doc.get("first")
-        else _doc.get("last")
-        or (p["doctor"].split()[-1] if p.get("doctor") else "")
-    )
+    _doc_search = _doc.get("last") or (p["doctor"].split()[-1] if p.get("doctor") else "")
     set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
                    _doc_search)
+    # Dismiss any combo-triggered popup and re-acquire dlg in case form refreshed
+    dismiss_popup(get_app())
+    time.sleep(T_SHORT)
+    try:
+        dlg = main_win.child_window(auto_id="FormCustomer", control_type="Window", found_index=0)
+    except Exception:
+        pass
     log.info("    Doctor: assigned (%s)", _doc_search)
 
     click_inner_tab(dlg, "Diagnosis")
