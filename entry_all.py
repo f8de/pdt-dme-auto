@@ -899,27 +899,16 @@ def _clear_insurance_rows(ctrl_pane):
     cleared = 0
     log.info("    Insurance: clearing existing rows...")
     a = get_app()
-    for _ in range(10):
+    for _ in range(20):
         try:
             grid = ctrl_pane.child_window(control_type="Table", found_index=0)
             row  = grid.child_window(title="Row 0", control_type="Custom", found_index=0)
             if not row.exists(timeout=0.1):
                 break
-            try:
-                n_before = len(grid.children(control_type="Custom"))
-            except Exception:
-                n_before = 99
             row.click_input()
             time.sleep(0.1)
             btn_del.click_input()
-            _dl = time.monotonic() + 2.0
-            while time.monotonic() < _dl:
-                try:
-                    if len(grid.children(control_type="Custom")) < n_before:
-                        break
-                except Exception:
-                    break
-                time.sleep(0.05)
+            time.sleep(0.3)
             cleared += 1
         except Exception:
             break
