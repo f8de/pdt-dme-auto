@@ -110,9 +110,9 @@ def set_status(msg: str) -> None:
     _set_title(f"DME Auto — {msg}")
 
 
-T_SHORT = 0.5
-T_MED   = 1.0
-T_LONG  = 1.8
+T_SHORT = 0.3
+T_MED   = 0.7
+T_LONG  = 1.2
 
 # ─── PRE-VALIDATION ───────────────────────────────────────────────────────────
 
@@ -608,8 +608,12 @@ def _fill_customer_form(dlg, p, main_win):
 
     click_inner_tab(dlg, "Contacts")
     contacts_pane = dlg.child_window(auto_id="tpContacts", found_index=0)
-    _doc_search = (p.get("_doctor") or {}).get("last") or (
-        p["doctor"].split()[-1] if p.get("doctor") else "")
+    _doc = p.get("_doctor") or {}
+    _doc_search = (
+        f"{_doc['last']}, {_doc['first']}" if _doc.get("last") and _doc.get("first")
+        else _doc.get("last")
+        or (p["doctor"].split()[-1] if p.get("doctor") else "")
+    )
     set_combo_text(contacts_pane.child_window(auto_id="cmbDoctor1", found_index=0),
                    _doc_search)
     log.info("    Doctor: assigned (%s)", _doc_search)
@@ -682,9 +686,15 @@ def _fill_customer_form(dlg, p, main_win):
                         entered = True
                     except Exception:
                         pass
-                for btn in ("Save", "OK", "Close"):
+                for _save_fn in [
+                    lambda: notes_dlg.child_window(auto_id="btnSave", found_index=0).click_input(),
+                    lambda: notes_dlg.child_window(auto_id="btnOK",   found_index=0).click_input(),
+                    lambda: notes_dlg.child_window(title="Save",  control_type="Button").click_input(),
+                    lambda: notes_dlg.child_window(title="OK",    control_type="Button").click_input(),
+                    lambda: notes_dlg.child_window(title="Close", control_type="Button").click_input(),
+                ]:
                     try:
-                        notes_dlg.child_window(title=btn, control_type="Button").click_input()
+                        _save_fn()
                         time.sleep(T_SHORT)
                         break
                     except Exception:

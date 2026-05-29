@@ -33,9 +33,9 @@ _TEST_PATIENT = {
     "gender": "Male", "height": "70", "weight": "160",
     "icd10": ["M54.5", "E11.9", "I10", "J44.1"],
     "secondary": None,
-    "notes": "Test note — automated ingest verification.",
+    "notes": "Test note - automated ingest verification.",
     "doctor": _TEST_DOCTOR["last"],
-    "_doctor": {"npi": _TEST_NPI},
+    "_doctor": {"npi": _TEST_NPI, "last": _TEST_DOCTOR["last"], "first": _TEST_DOCTOR["first"]},
     "_notion_page_id": None,
 }
 
