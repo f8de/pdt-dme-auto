@@ -269,8 +269,8 @@ def click_inner_tab(w, title):
     time.sleep(T_MED)
 
 def _search_and_open_work_area(w, last_name, npi=None):
-    """Use the Search tab + toolbar Search button to load an existing record into Work Area."""
-    # Click the Search tab on PageControl
+    """Filter the Search tab grid by last name and double-click the matching row."""
+    # Click Search tab on PageControl
     try:
         w.child_window(auto_id="PageControl", control_type="Tab", found_index=0).child_window(
             title="Search", control_type="TabItem").click_input()
@@ -279,43 +279,41 @@ def _search_and_open_work_area(w, last_name, npi=None):
         log.warning("    [warn] Search tab not found: %s", e)
         return False
 
-    # Fill NPI first (most unique), then last name as fallback
-    if npi:
-        try:
-            w.child_window(auto_id="txtNPI", found_index=0).set_edit_text(npi)
-            time.sleep(0.3)
-        except Exception:
-            pass
-
-    for aid in ("txtLastName", "txtSearch", "edtLastName"):
-        try:
-            w.child_window(auto_id=aid, found_index=0).set_edit_text(last_name)
-            time.sleep(0.3)
-            break
-        except Exception:
-            pass
-
-    # Click the Search toolbar button
+    # Type last name into txtFilter to narrow the grid
     try:
-        w.child_window(auto_id="tlbMain", control_type="ToolBar", found_index=0).child_window(
-            title="Search", control_type="Button").click_input()
-        time.sleep(T_LONG)
+        w.child_window(auto_id="txtFilter", found_index=0).set_edit_text(last_name)
+        time.sleep(T_MED)
     except Exception:
-        keyboard.send_keys("{ENTER}")
-        time.sleep(T_LONG)
+        pass
 
-    # If a result list appeared, pick the first row
-    for ct in ("DataItem", "ListItem"):
-        try:
-            items = list(w.descendants(control_type=ct))
-            if items:
-                items[0].double_click_input()
-                time.sleep(T_LONG)
+    # Find the grid and scan rows for a last-name match; fall back to Row 0
+    try:
+        grid = w.child_window(auto_id="Grid", control_type="Table", found_index=0)
+        for row_idx in range(20):
+            row_title = f"Row {row_idx}"
+            try:
+                row = grid.child_window(title=row_title, control_type="Custom", found_index=0)
+            except Exception:
                 break
-        except Exception:
-            pass
-
-    return True
+            try:
+                cell_val = row.child_window(
+                    title=f"Last Name {row_title}", control_type="Edit",
+                    found_index=0).window_text() or ""
+                if last_name.lower() in cell_val.lower():
+                    row.double_click_input()
+                    time.sleep(T_LONG)
+                    return True
+            except Exception:
+                # Can't read cell text — fall through to Row 0 fallback
+                break
+        # Fallback: Row 0 should be the top result after filtering
+        grid.child_window(title="Row 0", control_type="Custom",
+                          found_index=0).double_click_input()
+        time.sleep(T_LONG)
+        return True
+    except Exception as e:
+        log.warning("    [warn] Search grid not found or row not clickable: %s", e)
+        return False
 
 # ─── COMBO AND DOB ────────────────────────────────────────────────────────────
 

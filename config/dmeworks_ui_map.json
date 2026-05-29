@@ -14,29 +14,60 @@
     "menu_path": "Maintain->Doctor",
     "form_keyword": "Doctor",
     "toolbar": "tlbMain",
+    "page_control": "PageControl",
+    "search_tab": {
+      "tab_title": "Search",
+      "filter_field": "txtFilter",
+      "grid": { "auto_id": "Grid", "control_type": "Table" },
+      "grid_rows": { "control_type": "Custom", "title_pattern": "Row {n}" },
+      "grid_columns": ["ID", "Last Name", "First Name", "Address", "City", "State", "UPIN"],
+      "_note": "Rows pre-loaded; type last name in txtFilter then double-click Row N to open in Work Area"
+    },
+    "work_area_tab": "Work Area",
     "name_pane": {
+      "auto_id": "CName",
+      "parent": "Panel1",
       "fields": {
-        "last":   { "auto_id": "txtLastName" },
-        "first":  { "auto_id": "txtFirstName" },
-        "mi":     { "auto_id": "txtMiddleName" },
-        "suffix": { "auto_id": "txtSuffix" }
+        "last":     { "auto_id": "txtLastName" },
+        "first":    { "auto_id": "txtFirstName" },
+        "mi":       { "auto_id": "txtMiddleName" },
+        "suffix":   { "auto_id": "txtSuffix" },
+        "courtesy": { "auto_id": "cmbCourtesy", "type": "combo", "inner_auto_id": "1001" }
       }
     },
+    "tab_control": "TabControl1",
     "tabs": {
       "Address": {
+        "pane_id": "tpAddress",
         "fields": {
           "address1": { "auto_id": "txtAddress1" },
           "address2": { "auto_id": "txtAddress2" },
           "city":     { "auto_id": "txtCity" },
           "state":    { "auto_id": "txtState" },
           "zip":      { "auto_id": "txtZip" },
-          "phone":    { "auto_id": "txtPhone", "format": "phone" }
+          "phone":    { "auto_id": "txtPhone", "format": "phone" },
+          "fax":      { "auto_id": "txtFax" }
         }
       },
       "Numbers": {
+        "pane_id": "tpNumbers",
         "fields": {
-          "npi": { "auto_id": "txtNPI" },
-          "fax": { "auto_id": "txtFax", "_confirmed": false }
+          "npi":             { "auto_id": "txtNPI" },
+          "upin":            { "auto_id": "txtUPINNumber" },
+          "other_id":        { "auto_id": "txtOtherID" },
+          "medicaid_number": { "auto_id": "txtMedicaidNumber" },
+          "dea_number":      { "auto_id": "txtDEANumber" },
+          "license_number":  { "auto_id": "txtLicenseNumber" },
+          "fed_tax_id":      { "auto_id": "txtFEDTaxID" },
+          "pecos_enrolled":  { "auto_id": "chbPecosEnrolled", "type": "checkbox" }
+        }
+      },
+      "Marketing Information": {
+        "pane_id": "tpMarketing",
+        "fields": {
+          "doctor_type": { "auto_id": "cmbDoctorType", "type": "combo_search", "inner_auto_id": "cmbInternal" },
+          "title":       { "auto_id": "txtTitle" },
+          "contact":     { "auto_id": "txtContact" }
         }
       }
     }
