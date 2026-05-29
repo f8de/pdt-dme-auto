@@ -858,6 +858,7 @@ def add_insurance_row(pol_dialog, ins_company, ins_type, policy, group=""):
 def _clear_insurance_rows(ctrl_pane):
     panel   = ctrl_pane.child_window(auto_id="Panel1")
     cleared = 0
+    log.info("    Insurance: clearing existing rows...")
     for _ in range(10):
         try:
             grid = ctrl_pane.child_window(control_type="Table", found_index=0)

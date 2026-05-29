@@ -357,7 +357,7 @@ def _tools_menu() -> None:
 
         mapping = {t[0]: (t[1], t[2]) for t in tools}
         try:
-            raw = input(f"  {WH}Choice{RS} {DM}[0–8]{RS}:  ").strip()
+            raw = _read_key(f"  {WH}Choice{RS} {DM}[0–8]{RS}:  ")
         except (KeyboardInterrupt, EOFError):
             return
         if raw == "0" or raw == "":
@@ -441,7 +441,7 @@ def main() -> None:
         _menu_frame("DMEworks Automation — Allied Medical Health", rows)
 
         try:
-            raw = input(f"  {WH}Choice{RS} {DM}[0–5]{RS}:  ").strip()
+            raw = _read_key(f"  {WH}Choice{RS} {DM}[0–5]{RS}:  ")
         except (KeyboardInterrupt, EOFError):
             print()
             sys.exit(0)
@@ -466,7 +466,7 @@ def main() -> None:
             if pywinauto_ok and not dmeworks_ok:
                 print()
                 try:
-                    yn = input("  DMEworks not running. Launch now? [y/N]:  ").strip().lower()
+                    yn = _read_key("  DMEworks not running. Launch now? [y/N]:  ")
                 except (EOFError, KeyboardInterrupt):
                     continue
                 if yn == "y":
@@ -491,7 +491,7 @@ def main() -> None:
         if has_dry_run:
             print()
             try:
-                yn = input(f"  {WH}Dry run{RS} {DM}(preview without writing)? [y/N]{RS}:  ").strip().lower()
+                yn = _read_key(f"  {WH}Dry run{RS} {DM}(preview without writing)? [y/N]{RS}:  ")
             except (KeyboardInterrupt, EOFError):
                 continue
             if yn == "y":
