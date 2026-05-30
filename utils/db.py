@@ -448,21 +448,50 @@ def insert_patient(patient: dict, insurance_map: dict, dry_run: bool = False) ->
 
 # ─── TEST UTILITIES ───────────────────────────────────────────────────────────
 
+_TEST_FIXTURE_NPI = "9999999999"
+_TEST_FIXTURE_MBI = "1AA0AA0AA11"
+
+
 def clear_test_fixtures(npi: str, mbi: str) -> None:
     """Delete all DB rows for the test doctor (by NPI) and test patient (by MBI).
     Called at the top of every --live test run so each run starts from a clean state.
     Deletion order respects FK: notes → insurance → customer → doctor.
+
+    Safety: only accepts the known test NPI/MBI — raises ValueError for any other values.
+    Rolls back and raises if more than 1 doctor or 1 customer would be affected.
     """
+    if npi != _TEST_FIXTURE_NPI or mbi != _TEST_FIXTURE_MBI:
+        raise ValueError(
+            f"clear_test_fixtures refused: only test NPI={_TEST_FIXTURE_NPI} / "
+            f"MBI={_TEST_FIXTURE_MBI} are permitted. Got NPI={npi} MBI={mbi}"
+        )
+
     conn = _connect()
     try:
         cur = conn.cursor()
 
         cur.execute(
-            "SELECT CustomerID FROM tbl_customer_insurance WHERE PolicyNumber = %s LIMIT 1",
+            "SELECT CustomerID FROM tbl_customer_insurance WHERE PolicyNumber = %s",
             (mbi,),
         )
-        row = cur.fetchone()
-        customer_id = row[0] if row else None
+        rows = cur.fetchall()
+        customer_ids = list({r[0] for r in rows})
+        if len(customer_ids) > 1:
+            raise RuntimeError(
+                f"clear_test_fixtures safety abort: MBI {mbi} maps to "
+                f"{len(customer_ids)} customers — expected at most 1"
+            )
+        customer_id = customer_ids[0] if customer_ids else None
+
+        cur.execute(
+            "SELECT COUNT(*) FROM dmeworks.tbl_doctor WHERE NPI = %s", (npi,)
+        )
+        doctor_count = cur.fetchone()[0]
+        if doctor_count > 1:
+            raise RuntimeError(
+                f"clear_test_fixtures safety abort: NPI {npi} matches "
+                f"{doctor_count} doctors — expected at most 1"
+            )
 
         if customer_id:
             cur.execute("DELETE FROM tbl_customer_notes WHERE CustomerID = %s", (customer_id,))
