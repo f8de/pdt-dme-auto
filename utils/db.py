@@ -446,6 +446,41 @@ def insert_patient(patient: dict, insurance_map: dict, dry_run: bool = False) ->
         conn.close()
 
 
+# ─── TEST UTILITIES ───────────────────────────────────────────────────────────
+
+def clear_test_fixtures(npi: str, mbi: str) -> None:
+    """Delete all DB rows for the test doctor (by NPI) and test patient (by MBI).
+    Called at the top of every --live test run so each run starts from a clean state.
+    Deletion order respects FK: notes → insurance → customer → doctor.
+    """
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+
+        cur.execute(
+            "SELECT CustomerID FROM tbl_customer_insurance WHERE PolicyNumber = %s LIMIT 1",
+            (mbi,),
+        )
+        row = cur.fetchone()
+        customer_id = row[0] if row else None
+
+        if customer_id:
+            cur.execute("DELETE FROM tbl_customer_notes WHERE CustomerID = %s", (customer_id,))
+            cur.execute("DELETE FROM tbl_customer_insurance WHERE CustomerID = %s", (customer_id,))
+            cur.execute("DELETE FROM tbl_customer WHERE ID = %s", (customer_id,))
+
+        cur.execute("DELETE FROM dmeworks.tbl_doctor WHERE NPI = %s", (npi,))
+
+        conn.commit()
+        _log.info("[CLEAR] test fixtures removed — NPI=%s MBI=%s customer_id=%s",
+                  npi, mbi, customer_id)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def backup_databases(backup_dir: str) -> str:
     """
     Dump c02 + dmeworks via mysqldump. Purge backups older than 7 days.

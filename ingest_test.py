@@ -84,6 +84,9 @@ def run() -> None:
     log.info("  Validation: PASS")
 
     if not dry_run:
+        log.info("Clearing existing test fixtures from c02...")
+        db.clear_test_fixtures(_TEST_NPI, _TEST_MBI)
+
         bad_codes = db.validate_icd10_codes(_TEST_PATIENT["icd10"])
         if bad_codes:
             log.error("  ICD10 codes invalid or retired: %s", bad_codes)
