@@ -5,7 +5,9 @@ import os
 
 import requests
 
-_ENC_FILE = os.path.join(os.environ.get("APPDATA", ""), "pdt", "doppler.enc")
+_APPDATA_DIR = os.path.join(os.environ.get("APPDATA", ""), "dme-auto")
+_ENC_FILE = os.path.join(_APPDATA_DIR, "doppler.enc")
+_ENC_FILE_LEGACY = os.path.join(os.environ.get("APPDATA", ""), "pdt", "doppler.enc")
 _secrets_cache: dict | None = None
 
 
@@ -62,6 +64,10 @@ def _load_enc() -> str:
 
 
 def _ensure_doppler_token() -> str:
+    if not os.path.exists(_ENC_FILE) and os.path.exists(_ENC_FILE_LEGACY):
+        import shutil
+        os.makedirs(_APPDATA_DIR, exist_ok=True)
+        shutil.copy2(_ENC_FILE_LEGACY, _ENC_FILE)
     if not os.path.exists(_ENC_FILE):
         print()
         print("  First-time setup: Doppler service token not found.")

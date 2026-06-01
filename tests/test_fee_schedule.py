@@ -62,6 +62,12 @@ def _mock_response(zip_bytes: bytes) -> MagicMock:
 # ── load_fee_schedule tests ───────────────────────────────────────────────────
 
 class TestLoadFeeSchedule:
+    @pytest.fixture(autouse=True)
+    def _bypass_cache(self):
+        with patch("fee_schedule._load_cached", return_value=None), \
+             patch("fee_schedule._save_cached"):
+            yield
+
     def _rows(self):
         # Format matches DMEPOS26_JAN.txt: tilde-delimited, col1=HCPCS, col8=state(padded), col9=fee
         return [
@@ -130,6 +136,46 @@ class TestLoadFeeSchedule:
             schedule = fs.load_fee_schedule()
         assert ("B4034", "OH") not in schedule
         assert ("L0457", "NJ") in schedule
+
+
+class TestFeeScheduleCache:
+    def test_roundtrip(self, tmp_path):
+        schedule = {("L0457", "NJ"): 412.50, ("L1833", "OH"): 550.00}
+        with patch("fee_schedule._APPDATA_DIR", str(tmp_path)):
+            fs._save_cached("26b", schedule)
+            loaded = fs._load_cached("26b")
+        assert loaded == schedule
+
+    def test_cache_miss_returns_none(self, tmp_path):
+        with patch("fee_schedule._APPDATA_DIR", str(tmp_path)):
+            assert fs._load_cached("26b") is None
+
+    def test_corrupt_cache_returns_none(self, tmp_path):
+        (tmp_path / "fee_schedule_26b.json").write_text("not json")
+        with patch("fee_schedule._APPDATA_DIR", str(tmp_path)):
+            assert fs._load_cached("26b") is None
+
+    def test_cache_hit_skips_download(self, tmp_path):
+        schedule = {("L0457", "NJ"): 412.50}
+        with patch("fee_schedule._APPDATA_DIR", str(tmp_path)):
+            fs._save_cached("26b", schedule)
+            with patch("fee_schedule.requests.get") as mock_get, \
+                 patch("fee_schedule._current_quarter", return_value="26b"):
+                result = fs.load_fee_schedule()
+                mock_get.assert_not_called()
+        assert result == schedule
+
+    def test_cache_miss_triggers_download(self, tmp_path):
+        rows = [
+            "2026~L0457~  ~  ~J~OS~A~00~NJ     ~000412.50~000500.00~000350.00~000412.50~0~1~ ~desc",
+        ]
+        mock_resp = _mock_response(_make_zip(rows))
+        with patch("fee_schedule._APPDATA_DIR", str(tmp_path)), \
+             patch("fee_schedule.requests.get", return_value=mock_resp), \
+             patch("fee_schedule._current_quarter", return_value="26b"):
+            result = fs.load_fee_schedule()
+        assert ("L0457", "NJ") in result
+        assert (tmp_path / "fee_schedule_26b.json").exists()
 
 
 class TestGetAllowable:
