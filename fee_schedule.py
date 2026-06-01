@@ -91,3 +91,29 @@ def _prompt_manual(hcpcs: str, state: str) -> float:
             return float(raw)
         except ValueError:
             print("  Invalid — enter a number (e.g. 412.50)")
+
+
+if __name__ == "__main__":
+    print("Loading CMS DMEPOS fee schedule...")
+    schedule = load_fee_schedule()
+    if not schedule:
+        print("FAILED — schedule is empty. Check warnings above.")
+    else:
+        print(f"Loaded {len(schedule):,} entries.\n")
+        test_cases = [
+            ("L0457", "NJ"),
+            ("L1833", "NJ"),
+            ("L0457", "OH"),
+            ("L0457", "SC"),
+            ("L1833", "OH"),
+            ("L1833", "SC"),
+        ]
+        print(f"{'HCPCS':<8} {'State':<6} {'Allowable':>12} {'Billable':>12}")
+        print("-" * 42)
+        for hcpcs, state in test_cases:
+            amount = schedule.get((hcpcs, state))
+            if amount is not None:
+                allowable, billable = get_allowable(hcpcs, state, schedule)
+                print(f"{hcpcs:<8} {state:<6} ${allowable:>11.2f} ${billable:>11.2f}")
+            else:
+                print(f"{hcpcs:<8} {state:<6} {'NOT FOUND':>12}")
