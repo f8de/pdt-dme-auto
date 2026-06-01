@@ -233,6 +233,8 @@ from utils.creds import get_notion_token
 
 _token             = get_notion_token()
 INSURANCE_BY_STATE = notion.fetch_insurance_map(_token)
+from fee_schedule import load_fee_schedule
+FEE_SCHEDULE = load_fee_schedule()
 
 if MODE == "test":
     from ingest_test import fetch_test_fixtures
