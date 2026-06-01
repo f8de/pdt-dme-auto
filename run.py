@@ -417,6 +417,11 @@ def main() -> None:
             pass
         sys.exit(1)
 
+    print("  Loading fee schedule...", end="", flush=True)
+    from fee_schedule import load_fee_schedule
+    load_fee_schedule()
+    print("  done.", flush=True)
+
     # (num, label, dispatch_mode, base_args, needs_ui, has_dry_run, description)
     modes = [
         ("1", "Test",  "entry_all", ["--mode", "test"],  True,  False, "Fill all forms — full UI field test"),
