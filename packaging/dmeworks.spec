@@ -111,6 +111,8 @@ a = Analysis(
         "utils.db",
         "utils.validate",
         "utils.ui",
+        "entry_all",
+        "fee_schedule",
     ],
     hookspath=[],
     runtime_hooks=[os.path.join(SPECPATH, "hook_pywin32.py")],
