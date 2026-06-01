@@ -23,3 +23,48 @@ def _current_quarter(now: datetime | None = None) -> str:
     year = str(now.year)[2:]
     quarter = ["a","a","a","b","b","b","c","c","c","d","d","d"][now.month - 1]
     return f"{year}{quarter}"
+
+
+def load_fee_schedule() -> dict[tuple[str, str], float]:
+    """Download current CMS DMEPOS fee schedule, parse into lookup dict.
+    Returns {(hcpcs_upper, state_upper): allowable_amount}.
+    Returns empty dict on any failure — callers fall back to manual input."""
+    quarter = _current_quarter()
+    yy = quarter[:2]
+    url = _CMS_URL_PATTERN.format(yy=yy)
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+    except Exception as exc:
+        print(f"[fee_schedule] WARNING: Could not download fee schedule ({exc})")
+        print(f"[fee_schedule] URL: {url}")
+        print("[fee_schedule] All lookups will prompt for manual entry.")
+        return {}
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            dmepos = [n for n in zf.namelist() if n.upper().startswith("DMEPOS") and n.upper().endswith(".TXT")]
+            if not dmepos:
+                raise ValueError(f"No DMEPOS*.TXT file in ZIP. Contents: {zf.namelist()}")
+            with zf.open(sorted(dmepos)[0]) as f:
+                text = f.read().decode("latin-1")
+    except Exception as exc:
+        print(f"[fee_schedule] WARNING: Could not parse ZIP ({exc})")
+        return {}
+
+    schedule: dict[tuple[str, str], float] = {}
+    reader = csv.reader(io.StringIO(text), delimiter="~")
+    for row in reader:
+        if len(row) <= max(_COL_HCPCS, _COL_STATE, _COL_FEE):
+            continue
+        try:
+            hcpcs   = row[_COL_HCPCS].strip().upper()
+            state   = row[_COL_STATE].strip().upper()
+            fee_str = row[_COL_FEE].strip()
+            if not hcpcs or not state or not fee_str:
+                continue
+            schedule[(hcpcs, state)] = float(fee_str)
+        except (ValueError, IndexError):
+            continue
+
+    return schedule
