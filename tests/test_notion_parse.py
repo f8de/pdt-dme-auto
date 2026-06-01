@@ -52,6 +52,7 @@ def _sample_patient_page(
     height="65",
     weight="150",
     waist_size="",
+    hcpcs="",
 ):
     props = {
         "Patient Name": _title(f"{first} {last}"),
@@ -75,6 +76,7 @@ def _sample_patient_page(
         "Height":       _rt(height),
         "Weight":       _rt(weight),
         "Waist Size":   _rt(waist_size),
+        "HCPCS Codes":  _rt(hcpcs),
     }
     return {"id": page_id, "url": page_url, "properties": props}
 
@@ -333,3 +335,17 @@ def test_fetch_insurance_map_returns_empty_when_none_active():
     assert result == {}
 
 
+def test_parse_patient_hcpcs_pipe_split():
+    import utils.notion as n
+    page = _sample_patient_page(hcpcs="L0457|L1833|L0631")
+    with patch("utils.notion._fetch_doctor", return_value={"first": "J", "last": "S", "mi": "", "suffix": "", "npi": "1", "address1": "", "city": "", "state": "", "zip": "", "phone": ""}):
+        result = n._parse_patient("t", page)
+    assert result["hcpcs"] == ["L0457", "L1833", "L0631"]
+
+
+def test_parse_patient_hcpcs_empty():
+    import utils.notion as n
+    page = _sample_patient_page(hcpcs="")
+    with patch("utils.notion._fetch_doctor", return_value={"first": "J", "last": "S", "mi": "", "suffix": "", "npi": "1", "address1": "", "city": "", "state": "", "zip": "", "phone": ""}):
+        result = n._parse_patient("t", page)
+    assert result["hcpcs"] == []

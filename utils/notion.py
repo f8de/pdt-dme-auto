@@ -227,6 +227,10 @@ def _parse_patient(token: str, page: dict) -> dict | None:
     icd10_raw = rt("ICD10 Codes")
     icd10     = [c.strip() for c in icd10_raw.split("|") if c.strip()]
 
+    # HCPCS: pipe-separated text → list
+    hcpcs_raw = rt("HCPCS Codes")
+    hcpcs     = [c.strip() for c in hcpcs_raw.split("|") if c.strip()]
+
     # Secondary insurance: JSON text field
     secondary = None
     sec_raw   = rt("Secondary Insurance")
@@ -258,6 +262,7 @@ def _parse_patient(token: str, page: dict) -> dict | None:
         "waist_size": rt("Waist Size"),
         "doctor":     doc_name,
         "icd10":      icd10,
+        "hcpcs":      hcpcs,
         "secondary":  secondary,
         "notes":      rt("Notes"),
         "_notion_page_id": page["id"],
