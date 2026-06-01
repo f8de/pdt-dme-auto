@@ -130,3 +130,41 @@ class TestLoadFeeSchedule:
             schedule = fs.load_fee_schedule()
         assert ("B4034", "OH") not in schedule
         assert ("L0457", "NJ") in schedule
+
+
+class TestGetAllowable:
+    def test_hit_returns_allowable_and_double(self):
+        schedule = {("L0457", "NJ"): 412.50}
+        allowable, billable = fs.get_allowable("L0457", "NJ", schedule)
+        assert allowable == 412.50
+        assert billable == 825.00
+
+    def test_hit_case_insensitive(self):
+        schedule = {("L0457", "NJ"): 412.50}
+        allowable, billable = fs.get_allowable("l0457", "nj", schedule)
+        assert allowable == 412.50
+        assert billable == 825.00
+
+    def test_billable_rounded_to_cents(self):
+        schedule = {("L0457", "NJ"): 100.005}
+        _, billable = fs.get_allowable("L0457", "NJ", schedule)
+        assert billable == 200.01
+
+    def test_miss_prompts_for_manual_entry(self):
+        schedule = {}
+        with patch("builtins.input", return_value="300.00"):
+            allowable, billable = fs.get_allowable("L0457", "NJ", schedule)
+        assert allowable == 300.00
+        assert billable == 600.00
+
+    def test_miss_reprompts_on_invalid_input(self):
+        schedule = {}
+        with patch("builtins.input", side_effect=["abc", "xyz", "250.00"]):
+            allowable, _ = fs.get_allowable("L0457", "NJ", schedule)
+        assert allowable == 250.00
+
+    def test_empty_schedule_prompts(self):
+        with patch("builtins.input", return_value="100.00"):
+            allowable, billable = fs.get_allowable("XXXXX", "ZZ", {})
+        assert allowable == 100.00
+        assert billable == 200.00

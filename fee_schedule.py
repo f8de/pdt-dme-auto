@@ -68,3 +68,26 @@ def load_fee_schedule() -> dict[tuple[str, str], float]:
             continue
 
     return schedule
+
+
+def get_allowable(
+    hcpcs_code: str,
+    state: str,
+    schedule: dict[tuple[str, str], float],
+) -> tuple[float, float]:
+    """Return (allowable, billable=2x allowable).
+    Prompts for manual entry if code+state not found in schedule."""
+    key = (hcpcs_code.strip().upper(), state.strip().upper())
+    amount = schedule.get(key)
+    if amount is None:
+        amount = _prompt_manual(hcpcs_code.strip().upper(), state.strip().upper())
+    return amount, round(amount * 2, 2)
+
+
+def _prompt_manual(hcpcs: str, state: str) -> float:
+    while True:
+        raw = input(f"  Enter Medicare allowable for {hcpcs}/{state}: $").strip()
+        try:
+            return float(raw)
+        except ValueError:
+            print("  Invalid — enter a number (e.g. 412.50)")
