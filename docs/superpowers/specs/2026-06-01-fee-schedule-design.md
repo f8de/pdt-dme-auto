@@ -167,4 +167,4 @@ Verify at minimum: L0457/NJ, L1833/NJ, L0457/OH, L0457/SC — live CMS data, pri
 
 1. **Exact CMS ZIP URL** — confirm on first implementation run. Expected pattern: `https://www.cms.gov/files/zip/dme{yy}{q}.zip` (e.g. `dme26b.zip` for Q2 2026). Fallback: scrape the CMS DMEPOS fee schedule index page for the current quarter link.
 2. **Pipe-delimited column positions** — confirm HCPCS column, state column, and which fee amount column to use (floor vs. ceiling vs. non-rural fee). Use non-rural fee schedule amount as the allowable.
-3. **Notion parent page ID** — the page to create "DME Auto — App Reference" under. Either workspace root (requires workspace-level integration access) or a specific parent page ID stored in Doppler as `NOTION_DOCS_PARENT_ID`.
+3. **Notion parent** — workspace root (`{"type": "workspace", "workspace": true}`). Requires the Notion integration to have workspace-level access. If the current integration is page-scoped, update it in Notion Settings → Connections → the integration → grant workspace access before running the doc creation script.

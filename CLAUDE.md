@@ -28,6 +28,17 @@ Before adding any new `pip install`:
 Size budget: keep `dme-auto.exe` under ~50 MB. Current excludes in spec already strip:
 tkinter, sqlite3, stdlib servers, test/dev tools, win32comext.
 
+## AppData Directory
+
+All runtime state files go in `%APPDATA%\dme-auto\`. Nothing else.
+
+| File | Purpose |
+|------|---------|
+| `doppler.enc` | DPAPI-encrypted Doppler service token |
+| `fee_schedule_state.json` | Last-loaded CMS fee schedule quarter |
+
+No state is stored inside the EXE (read-only at runtime). No other AppData subdirectories.
+
 ## Databases
 
 | Code | Name      | Purpose          |
