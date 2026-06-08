@@ -504,15 +504,21 @@ def main() -> None:
         extra_args = list(base_args)
         if has_dry_run:
             print()
+            if label == "Fix":
+                dry_prompt    = f"  {WH}Dry run{RS} {DM}(preview only — no changes to DMEworks)? [y/N]{RS}:  "
+                live_prompt   = f"  {WH}Confirm fix{RS} {DM}(will update DMEworks UI — press N to cancel)? [y/N]{RS}:  "
+            else:
+                dry_prompt    = f"  {WH}Dry run{RS} {DM}(preview without writing)? [y/N]{RS}:  "
+                live_prompt   = f"  {WH}Confirm live run{RS} {DM}(writes to Allied)? [y/N]{RS}:  "
             try:
-                yn = _read_key(f"  {WH}Dry run{RS} {DM}(preview without writing)? [y/N]{RS}:  ")
+                yn = _read_key(dry_prompt)
             except (KeyboardInterrupt, EOFError):
                 continue
             if yn == "y":
                 extra_args.append("--dry-run")
-            elif label == "Run":
+            elif label in ("Run", "Fix"):
                 try:
-                    confirm = _read_key(f"  {WH}Confirm live run{RS} {DM}(writes to Allied)? [y/N]{RS}:  ")
+                    confirm = _read_key(live_prompt)
                 except (KeyboardInterrupt, EOFError):
                     continue
                 if confirm != "y":
