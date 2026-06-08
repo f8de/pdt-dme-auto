@@ -324,6 +324,25 @@ def test_parse_patient_height_weight_rich_text_takes_priority():
     assert result["weight"] == "160"
 
 
+def test_parse_patient_height_feet_inches_converted_to_inches():
+    import utils.notion as n
+    page = _sample_patient_page(height="5'9\"", weight="195")
+    with patch("utils.notion._fetch_doctor", return_value={"first": "J", "last": "S", "mi": "", "suffix": "", "npi": "1", "address1": "", "city": "", "state": "", "zip": "", "phone": ""}):
+        result = n._parse_patient("t", page)
+    assert result["height"] == "69"
+    assert result["weight"] == "195"
+
+
+def test_height_to_inches_variants():
+    from utils.notion import _height_to_inches
+    assert _height_to_inches("5'9\"") == "69"
+    assert _height_to_inches("5'2\"") == "62"
+    assert _height_to_inches("5'0\"") == "60"
+    assert _height_to_inches("70") == "70"
+    assert _height_to_inches("") == ""
+    assert _height_to_inches(None) is None
+
+
 def test_fetch_insurance_map_returns_empty_when_none_active():
     import utils.notion as n
     mock_resp = MagicMock()

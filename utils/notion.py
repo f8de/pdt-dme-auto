@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from datetime import datetime
 
@@ -11,6 +12,18 @@ _DOCTORS_DB_ID      = "8cfb6a87328d463fb3d24b811d0c6c16"
 _NOTION_VERSION     = "2022-06-28"
 
 _doctor_cache: dict[str, dict] = {}
+
+_HEIGHT_RE = re.compile(r"^\s*(\d+)'\s*(\d+)\"?\s*$")
+
+def _height_to_inches(val: str) -> str:
+    """Convert "5'9"" → "69". Pass through plain numbers unchanged."""
+    if not val:
+        return val
+    m = _HEIGHT_RE.match(val)
+    if m:
+        return str(int(m.group(1)) * 12 + int(m.group(2)))
+    return val
+
 
 
 def _headers(token: str) -> dict:
@@ -257,7 +270,7 @@ def _parse_patient(token: str, page: dict) -> dict | None:
         "zip":        rt("ZIP"),
         "phone":      phone("Phone"),
         "gender":     gender,
-        "height":     rt("Height") or num("Height"),
+        "height":     _height_to_inches(rt("Height") or num("Height")),
         "weight":     rt("Weight") or num("Weight"),
         "waist_size": rt("Waist Size"),
         "doctor":     doc_name,
