@@ -343,6 +343,16 @@ def test_height_to_inches_variants():
     assert _height_to_inches(None) is None
 
 
+def test_clean_notes_strips_boilerplate():
+    from utils.notion import _clean_notes
+    assert _clean_notes("All Rx docs reviewed. Ready to enter in DMEworks.") == ""
+    assert _clean_notes("All Rx docs reviewed. Complex patient: HIV/AIDS. Ready to enter in DMEworks.") == "Complex patient: HIV/AIDS."
+    assert _clean_notes("All Rx docs reviewed. Ready to enter in DMEworks once company setup is complete.") == ""
+    assert _clean_notes("All Rx docs reviewed. Back brace only. Ready to enter in DMEworks.") == "Back brace only."
+    assert _clean_notes("") == ""
+    assert _clean_notes(None) is None
+
+
 def test_fetch_insurance_map_returns_empty_when_none_active():
     import utils.notion as n
     mock_resp = MagicMock()

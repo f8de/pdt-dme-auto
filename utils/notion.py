@@ -25,6 +25,21 @@ def _height_to_inches(val: str) -> str:
     return val
 
 
+_NOTES_BOILERPLATE = [
+    "Ready to enter in DMEworks once company setup is complete.",
+    "Ready to enter in DMEworks.",
+    "All Rx docs reviewed.",
+]
+
+def _clean_notes(val: str) -> str:
+    """Strip workflow boilerplate — only clinical content goes to DMEworks."""
+    if not val:
+        return val
+    for phrase in _NOTES_BOILERPLATE:
+        val = val.replace(phrase, "")
+    return " ".join(val.split())
+
+
 
 def _headers(token: str) -> dict:
     return {
@@ -277,7 +292,7 @@ def _parse_patient(token: str, page: dict) -> dict | None:
         "icd10":      icd10,
         "hcpcs":      hcpcs,
         "secondary":  secondary,
-        "notes":      rt("Notes"),
+        "notes":      _clean_notes(rt("Notes")),
         "_notion_page_id": page["id"],
         "_notion_url":     page["url"],
         "_doctor":         doc,
