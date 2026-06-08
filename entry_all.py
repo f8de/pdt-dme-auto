@@ -1464,7 +1464,7 @@ def main():
     log.info("Need to create: %d doctor(s), %d insurance company(s), %d patient(s)",
              need_doctors, need_ins, need_patients)
 
-    if not DRY_RUN and (need_doctors or need_ins or need_patients):
+    if not DRY_RUN and MODE != "audit":
         log.info("")
         log.info("Connecting to DMEworks...")
         a, main_win = get_main()
