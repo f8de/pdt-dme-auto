@@ -1145,7 +1145,7 @@ def ensure_all_customers(a, main_win, existing_mbis):
             if row:
                 notes_needed = False
                 if p.get("notes") and row.get("customer_id"):
-                    existing = {r["Notes"] for r in db.verify_patient_notes(row["customer_id"])}
+                    existing = {notion._clean_notes(r["Notes"]) for r in db.verify_patient_notes(row["customer_id"])}
                     notes_needed = p["notes"] not in existing
                 elif p.get("notes"):
                     notes_needed = True
@@ -1231,7 +1231,7 @@ def run_audit():
             continue
         notes_needed = False
         if p.get("notes") and row.get("customer_id"):
-            existing     = {r["Notes"] for r in db.verify_patient_notes(row["customer_id"])}
+            existing     = {notion._clean_notes(r["Notes"]) for r in db.verify_patient_notes(row["customer_id"])}
             notes_needed = p["notes"] not in existing
         elif p.get("notes"):
             notes_needed = True
@@ -1378,7 +1378,7 @@ def run_verification():
 
         if p.get("notes") and row.get("customer_id"):
             notes_rows = db.verify_patient_notes(row["customer_id"])
-            notes_texts = [r["Notes"] for r in notes_rows]
+            notes_texts = [notion._clean_notes(r["Notes"]) for r in notes_rows]
             if p["notes"] not in notes_texts:
                 issues.append(f"notes not found in tbl_customer_notes (got {len(notes_rows)} row(s))")
 
