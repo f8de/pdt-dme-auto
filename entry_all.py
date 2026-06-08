@@ -597,13 +597,13 @@ def _set_doctor_by_find(contacts_pane, doc, main_win):
 def set_dob(win, dob_str):
     try:
         dob = win.child_window(auto_id="dtbDateofBirth", found_index=0)
-        rect = dob.wrapper_object().rectangle()
-        h = rect.bottom - rect.top
-        dob.click_input(coords=(6, h // 2))
-        time.sleep(0.35)
-        for _ in range(4):
-            keyboard.send_keys("{LEFT}")
-            time.sleep(0.03)
+        dob.click_input()
+        time.sleep(0.15)
+        keyboard.send_keys("^a")       # select all
+        time.sleep(0.05)
+        keyboard.send_keys("{DEL}")    # clear
+        time.sleep(0.05)
+        keyboard.send_keys("{HOME}")   # go to leftmost position
         time.sleep(0.1)
         mm, dd, yyyy = dob_str.split("/")
         keyboard.send_keys(mm)
