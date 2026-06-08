@@ -680,7 +680,7 @@ def _patient_diff_groups(p, row, notes_needed=False, secondary_row=None) -> set:
                     _s(secondary_row.get("PolicyNumber")) != _s(sec.get("policy"))):
                 groups.add("insurance")
     elif secondary_row is not None:
-        groups.add("insurance")
+        groups.add("insurance_extra")  # DB has secondary Notion doesn't — can't delete, audit-only
     if notes_needed:
         groups.add("notes")
     return groups
@@ -1002,8 +1002,12 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
                             sec["policy"], sec.get("group", "")))
 
         for i, (ins_co, ins_type, policy, group) in enumerate(desired):
-            pol = _open_insurance_row(ctrl_pane, i, main_win) if is_update else None
-            if pol is None:
+            if is_update:
+                pol = _open_insurance_row(ctrl_pane, i, main_win)
+                if pol is None:
+                    log.warning("    Insurance row %d: could not open for editing — skipping", i)
+                    continue
+            else:
                 ctrl_pane.child_window(auto_id="Panel1").child_window(
                     auto_id="btnAdd").click_input()
                 pol = _wait_mdi(main_win, "Policy Information", timeout=5.0)
@@ -1147,6 +1151,7 @@ def ensure_all_customers(a, main_win, existing_mbis):
                     notes_needed = True
                 secondary_row = secondary_rows.get(row.get("customer_id"))
                 groups = _patient_diff_groups(p, row, notes_needed, secondary_row)
+                groups -= {"insurance_extra"}
                 if not groups:
                     log.info("  [OK]     %s — no changes needed", label)
                     continue
@@ -1232,9 +1237,12 @@ def run_audit():
             notes_needed = True
         secondary_row = secondary_rows.get(row.get("customer_id"))
         groups = _patient_diff_groups(p, row, notes_needed, secondary_row)
-        if groups:
-            log.warning("  [DIFF]   %s — %s", label, sorted(groups))
+        fixable = groups - {"insurance_extra"}
+        if fixable:
+            log.warning("  [DIFF]   %s — %s", label, sorted(fixable))
             total_issues += 1
+        elif "insurance_extra" in groups:
+            log.info("  [OK]     %s (DB has extra secondary — remove manually)", label)
         else:
             log.info("  [OK]     %s", label)
 
