@@ -895,28 +895,17 @@ def add_insurance_row(pol_dialog, ins_company, ins_type, policy, group=""):
             pass
 
 
-def _clear_insurance_rows(ctrl_pane):
-    panel   = ctrl_pane.child_window(auto_id="Panel1")
-    btn_del = panel.child_window(auto_id="btnDelete", found_index=0)
-    cleared = 0
-    log.info("    Insurance: clearing existing rows...")
-    a = get_app()
-    for _ in range(20):
-        try:
-            grid = ctrl_pane.child_window(control_type="Table", found_index=0)
-            row  = grid.child_window(title="Row 0", control_type="Custom", found_index=0)
-            if not row.exists(timeout=0.1):
-                break
-            row.click_input()
-            time.sleep(0.1)
-            btn_del.click_input()
-            time.sleep(0.3)
-            dismiss_validation(a)
-            cleared += 1
-        except Exception:
-            break
-    if cleared:
-        log.info("    Insurance: cleared %d existing row(s)", cleared)
+def _open_insurance_row(ctrl_pane, row_index, main_win):
+    """Double-click existing row N to open Policy Information for editing. Returns dialog or None."""
+    try:
+        grid = ctrl_pane.child_window(control_type="Table", found_index=0)
+        row  = grid.child_window(title=f"Row {row_index}", control_type="Custom", found_index=0)
+        if not row.exists(timeout=0.5):
+            return None
+        row.double_click_input()
+        return _wait_mdi(main_win, "Policy Information", timeout=5.0)
+    except Exception:
+        return None
 
 
 def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
@@ -997,26 +986,23 @@ def _fill_customer_form(dlg, p, main_win, is_update=False, groups=None):
         click_inner_tab(dlg, "Insurance", anchor_auto_id="ControlCustomerInsurance1")
         ins_pane  = dlg.child_window(auto_id="tpInsurance", found_index=0)
         ctrl_pane = ins_pane.child_window(auto_id="ControlCustomerInsurance1")
-        if is_update:
-            _clear_insurance_rows(ctrl_pane)
-        ctrl_pane.child_window(auto_id="Panel1").child_window(
-            auto_id="btnAdd").click_input()
-        pol = _wait_mdi(main_win, "Policy Information", timeout=5.0)
-        if pol:
-            add_insurance_row(pol, medicare_name, "MEDICARE", p["mbi"])
-        else:
-            log.error("    Policy Information dialog not found (primary)")
+
+        desired = [(medicare_name, "MEDICARE", p["mbi"], "")]
         if p.get("secondary"):
             sec = p["secondary"]
-            ctrl_pane.child_window(auto_id="Panel1").child_window(
-                auto_id="btnAdd").click_input()
-            pol2 = _wait_mdi(main_win, "Policy Information", timeout=5.0)
-            if pol2:
-                add_insurance_row(pol2, sec["ins_company"],
-                                  sec["ins_type"], sec["policy"],
-                                  sec.get("group", ""))
+            desired.append((sec["ins_company"], sec["ins_type"],
+                            sec["policy"], sec.get("group", "")))
+
+        for i, (ins_co, ins_type, policy, group) in enumerate(desired):
+            pol = _open_insurance_row(ctrl_pane, i, main_win) if is_update else None
+            if pol is None:
+                ctrl_pane.child_window(auto_id="Panel1").child_window(
+                    auto_id="btnAdd").click_input()
+                pol = _wait_mdi(main_win, "Policy Information", timeout=5.0)
+            if pol:
+                add_insurance_row(pol, ins_co, ins_type, policy, group)
             else:
-                log.error("    Policy Information dialog not found (secondary)")
+                log.error("    Policy Information dialog not found (row %d)", i)
 
     if "notes" in groups and p.get("notes"):
         click_inner_tab(dlg, "Notes", anchor_auto_id="ControlCustomerNotes1")
