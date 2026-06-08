@@ -640,7 +640,7 @@ def _doctor_diff_groups(doc, db_row) -> set:
     return groups
 
 
-def _patient_diff_groups(p, row, notes_needed=False) -> set:
+def _patient_diff_groups(p, row, notes_needed=False, secondary_row=None) -> set:
     _s  = lambda v: (v or "").strip()
     _sl = lambda v: _s(v).lower()
     _ph = lambda v: "".join(c for c in _s(v) if c.isdigit())
@@ -672,6 +672,14 @@ def _patient_diff_groups(p, row, notes_needed=False) -> set:
     if db_codes != notion_codes:
         groups.add("diagnosis")
     if p.get("secondary"):
+        if secondary_row is None:
+            groups.add("insurance")
+        else:
+            sec = p["secondary"]
+            if (_sl(secondary_row.get("ins_company")) != sec.get("ins_company", "").lower() or
+                    _s(secondary_row.get("PolicyNumber")) != _s(sec.get("policy"))):
+                groups.add("insurance")
+    elif secondary_row is not None:
         groups.add("insurance")
     if notes_needed:
         groups.add("notes")
@@ -1111,6 +1119,11 @@ def ensure_all_customers(a, main_win, existing_mbis):
     to_update = [p for p in PATIENTS if p["mbi"] in existing_mbis]
 
     patient_rows = db.verify_patients(to_update) if to_update and not DRY_RUN else {}
+    if patient_rows:
+        _cids          = [r["customer_id"] for r in patient_rows.values() if r.get("customer_id")]
+        secondary_rows = db.fetch_secondary_insurance(_cids)
+    else:
+        secondary_rows = {}
 
     dismiss_popup(a)
     for p in to_update:
@@ -1132,7 +1145,8 @@ def ensure_all_customers(a, main_win, existing_mbis):
                     notes_needed = p["notes"] not in existing
                 elif p.get("notes"):
                     notes_needed = True
-                groups = _patient_diff_groups(p, row, notes_needed)
+                secondary_row = secondary_rows.get(row.get("customer_id"))
+                groups = _patient_diff_groups(p, row, notes_needed, secondary_row)
                 if not groups:
                     log.info("  [OK]     %s — no changes needed", label)
                     continue
@@ -1200,7 +1214,9 @@ def run_audit():
 
     log.info("")
     log.info("Patients (%d):", len(PATIENTS))
-    patient_rows = db.verify_patients(PATIENTS)
+    patient_rows   = db.verify_patients(PATIENTS)
+    customer_ids   = [r["customer_id"] for r in patient_rows.values() if r.get("customer_id")]
+    secondary_rows = db.fetch_secondary_insurance(customer_ids)
     for p in PATIENTS:
         label = f"MBI {mask_mbi(p['mbi'])}"
         row   = patient_rows.get(p["mbi"])
@@ -1214,7 +1230,8 @@ def run_audit():
             notes_needed = p["notes"] not in existing
         elif p.get("notes"):
             notes_needed = True
-        groups = _patient_diff_groups(p, row, notes_needed)
+        secondary_row = secondary_rows.get(row.get("customer_id"))
+        groups = _patient_diff_groups(p, row, notes_needed, secondary_row)
         if groups:
             log.warning("  [DIFF]   %s — %s", label, sorted(groups))
             total_issues += 1

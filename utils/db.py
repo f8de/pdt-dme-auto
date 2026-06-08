@@ -178,6 +178,27 @@ def verify_patients(patients: list[dict]) -> dict[str, dict]:
         conn.close()
 
 
+def fetch_secondary_insurance(customer_ids: list[int]) -> dict[int, dict]:
+    """Return active Rank=2 insurance rows keyed by customer_id."""
+    if not customer_ids:
+        return {}
+    ph = ",".join(["%s"] * len(customer_ids))
+    conn = _connect()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(f"""
+            SELECT ci.CustomerID, ci.PolicyNumber, ins.Name AS ins_company
+            FROM tbl_customer_insurance ci
+            JOIN dmeworks.tbl_insurancecompany ins ON ins.ID = ci.InsuranceCompanyID
+            WHERE ci.CustomerID IN ({ph})
+              AND ci.Rank = 2
+              AND ci.InactiveDate IS NULL
+        """, customer_ids)
+        return {row["CustomerID"]: row for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 def verify_patient_notes(customer_id: int) -> list[dict]:
     """Return notes rows for a customer from tbl_customer_notes."""
     conn = _connect()
